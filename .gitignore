@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+*.db
+.env
+scratch/
+backend/uploads/posters/*.jpg
+backend/uploads/posters/*.png

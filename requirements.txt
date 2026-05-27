@@ -1,0 +1,20 @@
+# Backend
+fastapi
+uvicorn[standard]
+sqlalchemy
+pymysql
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart
+python-dotenv
+reportlab
+qrcode
+Pillow
+
+# Frontend
+nicegui
+httpx
+
+# Wait and Async
+aiofiles
+fastapi-mail
