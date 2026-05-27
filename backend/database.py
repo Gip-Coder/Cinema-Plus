@@ -10,10 +10,34 @@ DB_USER = os.getenv("DB_USER", "root")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "admin")
 DB_NAME = os.getenv("DB_NAME", "MovieTicketBooking")
 
-# Temporarily forcing SQLite to stop the hanging issues
-SQLALCHEMY_DATABASE_URL = "sqlite:///./movie_booking.db"
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
-print("Using SQLite for stability...")
+# Fully migrated to MySQL
+SQLALCHEMY_DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
+print(f"Connecting to database: mysql+pymysql://{DB_USER}:***@{DB_HOST}/{DB_NAME}")
+
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    pool_size=10,
+    max_overflow=20,
+    pool_recycle=3600,
+    pool_pre_ping=True
+)
+
+from sqlalchemy import inspect
+try:
+    with engine.connect() as connection:
+        inspector = inspect(engine)
+        existing_tables = inspector.get_table_names()
+        print(f"Successfully connected to MySQL Database: {DB_NAME}")
+        print(f"Active Tables found: {existing_tables}")
+        
+        required_tables = ["movies", "bookings", "theatres", "screens", "users", "reviews"]
+        missing_tables = [t for t in required_tables if t not in existing_tables]
+        if missing_tables:
+            print(f"WARNING: The following required tables are missing in MySQL: {missing_tables}")
+        else:
+            print("All required tables are verified and exist in MySQL database!")
+except Exception as e:
+    print(f"ERROR: Failed to connect to MySQL database at startup: {e}")
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 from nicegui import ui
 import sys
 import os

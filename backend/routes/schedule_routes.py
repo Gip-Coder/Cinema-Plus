@@ -45,15 +45,27 @@ async def create_show(show: ShowCreate, db: Session = Depends(get_db), current_a
 
 @router.get("/shows/{movie_id}", response_model=List[ShowResponse])
 async def get_shows_by_movie(movie_id: int, db: Session = Depends(get_db)):
-    return db.query(Show).filter(Show.movie_id == movie_id).all()
+    from sqlalchemy.orm import joinedload
+    return db.query(Show).options(
+        joinedload(Show.movie),
+        joinedload(Show.screen)
+    ).filter(Show.movie_id == movie_id).all()
 
 @router.get("/shows/all/", response_model=List[ShowResponse])
 async def get_all_shows(db: Session = Depends(get_db)):
-    return db.query(Show).all()
+    from sqlalchemy.orm import joinedload
+    return db.query(Show).options(
+        joinedload(Show.movie),
+        joinedload(Show.screen)
+    ).all()
 
 @router.get("/shows/show/{show_id}", response_model=ShowResponse)
 async def get_show(show_id: int, db: Session = Depends(get_db)):
-    show = db.query(Show).filter(Show.id == show_id).first()
+    from sqlalchemy.orm import joinedload
+    show = db.query(Show).options(
+        joinedload(Show.movie),
+        joinedload(Show.screen)
+    ).filter(Show.id == show_id).first()
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
     return show

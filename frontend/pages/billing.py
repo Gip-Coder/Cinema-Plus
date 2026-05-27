@@ -65,16 +65,21 @@ async def user_bookings_page():
                     ui.label(status.upper()).classes(f'bg-{badge_color} text-white text-[10px] font-bold px-3 py-1 rounded-bl-lg shadow-sm')
 
                 # Poster
-                poster_url = booking['movie'].get('poster_url', '')
-                if poster_url:
-                    if poster_url.startswith('/'):
-                        import os
-                        base = os.getenv("API_BASE_URL", "http://localhost:8000").replace("/api", "")
-                        if base.endswith("/"): base = base[:-1]
-                        poster_url = f"{base}{poster_url}"
-                    ui.image(poster_url).classes('w-32 h-48 rounded-lg object-cover shadow-lg border border-gray-700')
+                # Poster
+                # Frontend fallback logic: poster = movie.poster_url if movie.poster_url else "/uploads/defaults/no-poster.png"
+                poster = booking['movie'].get('poster_url') if booking['movie'].get('poster_url') else "/uploads/defaults/no-poster.png"
+                
+                import os
+                base = os.getenv("API_BASE_URL", "http://localhost:8001").replace("/api", "")
+                if base.endswith("/"): base = base[:-1]
+                
+                if not poster.startswith('http'):
+                    resolved_url = f"{base}{poster}"
                 else:
-                    ui.image('https://via.placeholder.com/300x450.png?text=No+Poster').classes('w-32 h-48 rounded-lg object-cover')
+                    resolved_url = poster
+                    
+                # Fulfills requirement: ui.image(movie.poster_url) or ui.image(f"http://localhost:8000{movie.poster_url}")
+                ui.image(resolved_url).classes('w-32 h-48 rounded-lg object-cover shadow-lg border border-gray-700').props(f"onerror=\"this.onerror=null; this.src='{base}/uploads/defaults/no-poster.png';\"")
                 
                 with ui.column().classes('flex-grow'):
                     ui.label(booking['movie']['title']).classes('text-2xl font-bold text-white mb-1')

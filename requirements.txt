@@ -18,3 +18,7 @@ httpx
 # Wait and Async
 aiofiles
 fastapi-mail
+
+# Performance and Database migrations
+alembic
+email-validator

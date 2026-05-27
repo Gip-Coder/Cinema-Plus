@@ -126,6 +126,12 @@ class APIClient:
         if response.status_code == 200:
             return response.json()
         return []
+
+    async def get_seat_price_details(self, show_id: int, category: str) -> Dict:
+        response = await self.client.get(f"/api/bookings/price-calculation?show_id={show_id}&category={category}")
+        if response.status_code == 200:
+            return response.json()
+        return {"base_price": 0.0, "applied_rules": [], "final_price": 0.0}
         
     async def download_ticket(self, booking_id: int) -> bytes:
         response = await self.client.get(f"/api/tickets/ticket/{booking_id}/pdf")
@@ -147,6 +153,10 @@ class APIClient:
     async def delete_movie(self, movie_id: int) -> bool:
         response = await self.client.delete(f"/api/movies/{movie_id}")
         return response.status_code == 204
+
+    async def update_movie(self, movie_id: int, movie_data: Dict) -> bool:
+        response = await self.client.put(f"/api/movies/{movie_id}", json=movie_data)
+        return response.status_code == 200
 
     async def get_revenue_chart(self) -> Dict:
         response = await self.client.get("/api/admin/revenue-chart")
@@ -174,9 +184,15 @@ class APIClient:
         response = await self.client.delete(f"/api/admin/bookings/{booking_id}")
         return response.status_code == 200
 
-    async def upload_poster(self, file_content: bytes, filename: str) -> Optional[str]:
-        files = {"file": (filename, file_content, "image/jpeg")}
-        response = await self.client.post("/api/movies/upload-poster", files=files)
+    async def upload_poster(self, file_content: bytes = None, filename: str = None, image_url: str = None) -> Optional[str]:
+        if file_content is not None:
+            files = {"file": (filename, file_content, "image/jpeg")}
+            response = await self.client.post("/api/movies/upload-poster", files=files)
+        elif image_url is not None:
+            response = await self.client.post("/api/movies/upload-poster", json={"poster_url": image_url})
+        else:
+            return None
+            
         if response.status_code == 200:
             return response.json().get("poster_url")
         return None
@@ -247,6 +263,60 @@ class APIClient:
         
     async def delete_review(self, review_id: int) -> bool:
         response = await self.client.delete(f"/api/reviews/{review_id}")
+        return response.status_code == 200
+
+    # --- Expanded Admin CRUD ---
+    async def update_theatre(self, theatre_id: int, data: Dict) -> bool:
+        response = await self.client.put(f"/api/admin/theatres/{theatre_id}", json=data)
+        return response.status_code == 200
+        
+    async def delete_theatre(self, theatre_id: int) -> bool:
+        response = await self.client.delete(f"/api/admin/theatres/{theatre_id}")
+        return response.status_code == 200
+
+    async def update_screen(self, screen_id: int, data: Dict) -> bool:
+        response = await self.client.put(f"/api/admin/screens/{screen_id}", json=data)
+        return response.status_code == 200
+
+    async def get_pricings(self) -> List[Dict]:
+        response = await self.client.get("/api/admin/pricing")
+        if response.status_code == 200:
+            return response.json()
+        return []
+
+    async def update_pricing(self, pricing_id: int, base_price: float, override: bool = False) -> bool:
+        headers = {}
+        if override:
+            headers["X-Admin-Override"] = "true"
+        response = await self.client.put(f"/api/admin/pricing/{pricing_id}", json={"base_price": base_price}, headers=headers)
+        if response.status_code == 400:
+            # Propagate validation failure message to UI
+            raise Exception(response.json().get("detail", "Hierarchy pricing validation failed."))
+        return response.status_code == 200
+
+    async def create_pricing_rule(self, data: Dict) -> bool:
+        response = await self.client.post("/api/admin/pricing/rules", json=data)
+        return response.status_code == 200
+
+    async def update_pricing_rule(self, rule_id: int, data: Dict) -> bool:
+        response = await self.client.put(f"/api/admin/pricing/rules/{rule_id}", json=data)
+        return response.status_code == 200
+
+    async def upload_media_asset(self, file_content: bytes = None, filename: str = None, asset_type: str = "original", image_url: str = None) -> Optional[Dict]:
+        if file_content is not None:
+            files = {"file": (filename, file_content, "image/jpeg")}
+            response = await self.client.post(f"/api/admin/media/upload?asset_type={asset_type}", files=files)
+        elif image_url is not None:
+            response = await self.client.post(f"/api/admin/media/upload-url", json={"image_url": image_url, "asset_type": asset_type})
+        else:
+            return None
+            
+        if response.status_code == 200:
+            return response.json()
+        return None
+
+    async def delete_media_asset(self, asset_id: int) -> bool:
+        response = await self.client.delete(f"/api/admin/media/{asset_id}")
         return response.status_code == 200
 
 api_client = APIClient()

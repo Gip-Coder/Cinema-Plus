@@ -15,22 +15,49 @@ async def landing_page():
                 ui.html('<div style="width:60px; height:4px; background: linear-gradient(90deg, #E50914, transparent); border-radius:2px; margin-top:4px;"></div>', sanitize=False)
             
             with ui.row().classes('gap-3 items-center'):
-                search_input = ui.input('Search movies...', on_change=lambda: refresh_movies()).props('dark standout rounded dense').classes('w-56')
+                # Added debounce=300 to input search
+                search_input = ui.input('Search movies...', on_change=lambda: refresh_movies()).props('dark standout rounded dense debounce=300').classes('w-56')
                 genre_filter = ui.select(['All Genres', 'Action', 'Drama', 'Comedy', 'Sci-Fi', 'Horror', 'Thriller'], value='All Genres', on_change=lambda: refresh_movies()).props('dark standout rounded dense').classes('w-44')
 
         movie_container = ui.row().classes('w-full gap-6 justify-start flex-wrap')
         
+        # Track in-flight search sequence to prevent race conditions
+        search_state = {"current_request_id": 0}
+        
         async def refresh_movies():
+            search_state["current_request_id"] += 1
+            request_id = search_state["current_request_id"]
+            
             movie_container.clear()
+            
+            # 1. Render Fixed-Size Skeleton Shimmer placeholders (no layout shift)
+            with movie_container:
+                for _ in range(6):
+                    with ui.card().classes('movie-card w-64 h-[500px] overflow-hidden relative border border-gray-800 bg-[#141414]'):
+                        ui.element('div').classes('shimmer w-full h-[380px]')
+                        with ui.column().classes('p-4 w-full gap-2 absolute bottom-0 left-0 right-0 bg-black/80'):
+                            ui.element('div').classes('shimmer h-6 w-3/4')
+                            ui.element('div').classes('shimmer h-4 w-1/2')
+
             q = search_input.value if search_input.value else None
             genre = genre_filter.value if genre_filter.value != 'All Genres' else None
             
             try:
                 movies = await api_client.search_movies(q=q, genre=genre)
             except Exception as e:
+                # Cancel rendering if another search request started in-flight
+                if request_id != search_state["current_request_id"]:
+                    return
+                movie_container.clear()
                 with movie_container:
                     ui.label(f'Could not connect to backend. Please ensure the server is running.').classes('text-xl text-red-400 mt-8')
                 return
+            
+            # Cancel rendering if another search request started in-flight
+            if request_id != search_state["current_request_id"]:
+                return
+                
+            movie_container.clear()
             
             if not movies:
                 with movie_container:
@@ -40,16 +67,20 @@ async def landing_page():
             with movie_container:
                 for movie in movies:
                     with ui.card().classes('movie-card w-64 cursor-pointer relative overflow-hidden h-[500px]').on('click', lambda m=movie: ui.navigate.to(f'/movie/{m["id"]}')):
-                        poster_url = movie.get("poster_url", "")
-                        if poster_url:
-                            if poster_url.startswith('/'):
-                                import os
-                                base = os.getenv("API_BASE_URL", "http://localhost:8000").replace("/api", "")
-                                if base.endswith("/"): base = base[:-1]
-                                poster_url = f"{base}{poster_url}"
-                            ui.image(poster_url).classes('w-full h-full object-cover')
+                        # Frontend fallback logic: poster = movie.poster_url if movie.poster_url else "/uploads/defaults/no-poster.png"
+                        poster = movie.get("poster_url") if movie.get("poster_url") else "/uploads/defaults/no-poster.png"
+                        
+                        import os
+                        base = os.getenv("API_BASE_URL", "http://localhost:8001").replace("/api", "")
+                        if base.endswith("/"): base = base[:-1]
+                        
+                        if not poster.startswith('http'):
+                            resolved_url = f"{base}{poster}"
                         else:
-                            ui.image('https://via.placeholder.com/300x450.png?text=No+Poster').classes('w-full h-full object-cover')
+                            resolved_url = poster
+                            
+                        # Fulfills requirement: ui.image(movie.poster_url) or ui.image(f"http://localhost:8000{movie.poster_url}")
+                        ui.image(resolved_url).classes('w-full h-full object-cover').props(f"onerror=\"this.onerror=null; this.src='{base}/uploads/defaults/no-poster.png';\"")
                         
                         with ui.column().classes('p-4 w-full bg-gradient-to-t from-black via-black/80 to-transparent absolute bottom-0 left-0 right-0'):
                             ui.label(movie["title"]).classes('text-xl font-bold text-white truncate w-full')

@@ -1,32 +1,64 @@
 from nicegui import ui
 from frontend.services.api_client import api_client
 from frontend.components.ui_components import apply_theme, navbar
+import asyncio
 
 @ui.page('/movie/{movie_id}')
 async def movie_detail_page(movie_id: int):
     apply_theme()
     navbar()
     
-    movie = await api_client.get_movie(movie_id)
+    # Concurrent fetching with timeout handling and graceful degradation
+    try:
+        movie_task = api_client.get_movie(movie_id)
+        shows_task = api_client.get_shows_by_movie(movie_id)
+        reviews_task = api_client.get_movie_reviews(movie_id)
+        
+        # Gather all tasks, but wrap in wait_for with a 4.0s timeout to be safe
+        results = await asyncio.wait_for(
+            asyncio.gather(movie_task, shows_task, reviews_task, return_exceptions=True),
+            timeout=4.0
+        )
+        movie = results[0] if not isinstance(results[0], Exception) else None
+        shows = results[1] if not isinstance(results[1], Exception) else []
+        reviews = results[2] if not isinstance(results[2], Exception) else []
+        
+        # Trigger notification if some APIs failed
+        if isinstance(results[1], Exception):
+            ui.notify("Failed to load showtimes.", type="warning")
+        if isinstance(results[2], Exception):
+            ui.notify("Failed to load reviews.", type="warning")
+            
+    except asyncio.TimeoutError:
+        ui.notify("Loading took too long. Showing partial results.", type="warning")
+        movie, shows, reviews = None, [], []
+    except Exception as e:
+        movie, shows, reviews = None, [], []
+    
+    # Graceful degradation if movie fails to load
     if not movie:
         with ui.column().classes('w-full items-center mt-20'):
-            ui.label('Movie not found').classes('text-2xl text-red-500')
+            ui.label('Movie not found or failed to load.').classes('text-2xl text-red-500')
             ui.button('Back to Home', on_click=lambda: ui.navigate.to('/')).classes('mt-4')
         return
 
     with ui.row().classes('w-full p-8 max-w-6xl mx-auto mt-4 gap-10').style('animation: fadeInUp 0.4s ease both'):
         # Poster Column
         with ui.column().classes('w-1/3'):
-            poster_url = movie.get("poster_url", "")
-            if poster_url:
-                if poster_url.startswith('/'):
-                    import os
-                    base = os.getenv("API_BASE_URL", "http://localhost:8001")
-                    if base.endswith("/"): base = base[:-1]
-                    poster_url = f"{base}{poster_url}"
-                ui.image(poster_url).classes('w-full rounded-2xl shadow-2xl').style('border: 1px solid rgba(255,255,255,0.06)')
+            # Frontend fallback logic: poster = movie.poster_url if movie.poster_url else "/uploads/defaults/no-poster.png"
+            poster = movie.get("poster_url") if movie.get("poster_url") else "/uploads/defaults/no-poster.png"
+            
+            import os
+            base = os.getenv("API_BASE_URL", "http://localhost:8001").replace("/api", "")
+            if base.endswith("/"): base = base[:-1]
+            
+            if not poster.startswith('http'):
+                resolved_url = f"{base}{poster}"
             else:
-                ui.image('https://via.placeholder.com/400x600.png?text=No+Poster').classes('w-full rounded-2xl shadow-2xl')
+                resolved_url = poster
+                
+            # Fulfills requirement: ui.image(movie.poster_url) or ui.image(f"http://localhost:8000{movie.poster_url}")
+            ui.image(resolved_url).classes('w-full rounded-2xl shadow-2xl').style('border: 1px solid rgba(255,255,255,0.06)').props(f"onerror=\"this.onerror=null; this.src='{base}/uploads/defaults/no-poster.png';\"")
                 
         # Details Column
         with ui.column().classes('w-2/3'):
@@ -51,7 +83,6 @@ async def movie_detail_page(movie_id: int):
             
             ui.label('Available Shows').classes('text-lg font-bold text-gray-400 uppercase tracking-wider mb-4')
             
-            shows = await api_client.get_shows_by_movie(movie_id)
             if not shows:
                 ui.label('No shows scheduled currently.').classes('text-gray-500 italic')
             else:
@@ -67,7 +98,10 @@ async def movie_detail_page(movie_id: int):
                         with ui.card().classes('glass-card p-4 items-center justify-center cursor-pointer min-w-[120px]').on('click', book_show):
                             ui.label(show['date']).classes('text-xs text-gray-500 font-semibold')
                             ui.label(show['start_time']).classes('text-2xl font-extrabold text-primary mt-1')
-                            ui.label(f"Screen {show['screen_id']}").classes('text-[10px] text-gray-600 mt-2 uppercase tracking-wider')
+                            
+                            # Render descriptive screen name
+                            screen_name = show.get('screen', {}).get('name', f"Screen {show['screen_id']}")
+                            ui.label(screen_name).classes('text-[10px] text-gray-600 mt-2 uppercase tracking-wider')
 
     # Reviews Section
     with ui.column().classes('w-full p-8 max-w-6xl mx-auto mt-12'):
@@ -108,7 +142,6 @@ async def movie_detail_page(movie_id: int):
                 ui.link('Sign in to post a review', '/login').classes('text-primary no-underline font-medium')
 
         # List Reviews
-        reviews = await api_client.get_movie_reviews(movie_id)
         if not reviews:
             ui.label('No reviews yet. Be the first to review!').classes('text-gray-500 italic')
         else:
@@ -128,4 +161,3 @@ async def movie_detail_page(movie_id: int):
                         ui.label(review['created_at'][:10]).classes('text-[10px] text-gray-600 font-medium')
                     
                     ui.label(review['comment']).classes('text-gray-300 leading-relaxed text-sm')
-

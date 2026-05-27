@@ -10,7 +10,12 @@ router = APIRouter()
 
 @router.get("/ticket/{booking_id}/pdf")
 async def download_ticket(booking_id: int, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    from sqlalchemy.orm import joinedload
+    booking = db.query(Booking).options(
+        joinedload(Booking.user),
+        joinedload(Booking.movie),
+        joinedload(Booking.show)
+    ).filter(Booking.id == booking_id).first()
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
         

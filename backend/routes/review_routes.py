@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import joinedload
 from typing import List
 from backend.database import get_db
 from backend.models.models import Review, Movie
 from backend.schemas.schemas import ReviewCreate, ReviewResponse
 from backend.auth.security import get_current_user, get_current_admin_user
+from backend.utils.cache import cache
 
 router = APIRouter()
 
@@ -19,11 +21,21 @@ async def create_review(review: ReviewCreate, db: Session = Depends(get_db), cur
     db.add(db_review)
     db.commit()
     db.refresh(db_review)
+    
+    # Invalidate reviews cache
+    cache.invalidate("reviews:*")
     return db_review
 
 @router.get("/movie/{movie_id}", response_model=List[ReviewResponse])
 async def get_movie_reviews(movie_id: int, db: Session = Depends(get_db)):
-    return db.query(Review).filter(Review.movie_id == movie_id).order_by(Review.created_at.desc()).all()
+    cache_key = f"reviews:movie:{movie_id}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    reviews = db.query(Review).options(joinedload(Review.user)).filter(Review.movie_id == movie_id).order_by(Review.created_at.desc()).all()
+    cache.set(cache_key, reviews, ttl=120)
+    return reviews
 
 @router.delete("/{review_id}")
 async def delete_review(review_id: int, db: Session = Depends(get_db), current_admin = Depends(get_current_admin_user)):
@@ -32,8 +44,18 @@ async def delete_review(review_id: int, db: Session = Depends(get_db), current_a
         raise HTTPException(status_code=404, detail="Review not found")
     db.delete(db_review)
     db.commit()
+    
+    # Invalidate reviews cache
+    cache.invalidate("reviews:*")
     return {"message": "Review deleted"}
 
 @router.get("/all", response_model=List[ReviewResponse])
 async def get_all_reviews(db: Session = Depends(get_db), current_admin = Depends(get_current_admin_user)):
-    return db.query(Review).all()
+    cache_key = "reviews:all"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    reviews = db.query(Review).options(joinedload(Review.user)).all()
+    cache.set(cache_key, reviews, ttl=120)
+    return reviews

@@ -3,12 +3,6 @@ from frontend.services.api_client import api_client
 from frontend.components.ui_components import apply_theme, navbar
 import asyncio
 
-SEAT_PRICES = {
-    'Normal': 900,
-    'Executive': 950,
-    'Premium': 1000
-}
-
 @ui.page('/book/{show_id}')
 async def seat_selection_page(show_id: int):
     if not api_client.is_authenticated():
@@ -18,7 +12,17 @@ async def seat_selection_page(show_id: int):
     apply_theme()
     navbar()
     
-    show = await api_client.get_show(show_id)
+    # Concurrent fetching with timeout handling
+    try:
+        show_task = api_client.get_show(show_id)
+        booked_task = api_client.get_booked_seats(show_id)
+        
+        show, booked_seats_data = await asyncio.gather(show_task, booked_task)
+    except Exception as e:
+        ui.notify(f"Error loading booking details: {e}", type="negative")
+        ui.navigate.to("/")
+        return
+        
     if not show:
         ui.label('Show not found')
         return
@@ -26,28 +30,49 @@ async def seat_selection_page(show_id: int):
     movie_id = show['movie_id']
     movie = await api_client.get_movie(movie_id)
     
-    booked_seats_data = await api_client.get_booked_seats(show_id)
     booked_seat_names = [seat['seat_name'] for seat in booked_seats_data]
     
-    selected_seats = set()
+    selected_seats = {}
     total_price = {'value': 0}
-    multiplier = show.get('price_multiplier', 1.0)
+    
+    # Dynamic price retrieval and surge rules logging on page load
+    try:
+        prices_payload = await asyncio.gather(
+            api_client.get_seat_price_details(show_id, "Normal"),
+            api_client.get_seat_price_details(show_id, "Executive"),
+            api_client.get_seat_price_details(show_id, "Premium"),
+        )
+        seat_prices = {
+            "Normal": prices_payload[0].get("final_price", 150),
+            "Executive": prices_payload[1].get("final_price", 220),
+            "Premium": prices_payload[2].get("final_price", 300)
+        }
+        
+        # Accumulate applied rules lists to display them dynamically on the page
+        applied_rules = []
+        for pl in prices_payload:
+            for r in pl.get("applied_rules", []):
+                if r["name"] not in [rule["name"] for rule in applied_rules]:
+                    applied_rules.append(r)
+    except Exception:
+        seat_prices = {"Normal": 150, "Executive": 220, "Premium": 300}
+        applied_rules = []
     
     def update_summary():
-        summary_label.set_text(f"Selected Seats: {', '.join(sorted(selected_seats))} | Total: Rs. {total_price['value']}")
+        summary_label.set_text(f"Selected Seats: {', '.join(sorted(selected_seats.keys()))} | Total: Rs. {total_price['value']}")
         book_btn.set_visibility(len(selected_seats) > 0)
 
     def toggle_seat(seat_name, category, btn):
         if seat_name in booked_seat_names:
             return
             
-        price = int(SEAT_PRICES[category] * multiplier)
+        price = int(seat_prices[category])
         if seat_name in selected_seats:
-            selected_seats.remove(seat_name)
+            selected_seats.pop(seat_name)
             total_price['value'] -= price
             btn.classes(remove='seat-selected', add='seat-available')
         else:
-            selected_seats.add(seat_name)
+            selected_seats[seat_name] = category
             total_price['value'] += price
             btn.classes(remove='seat-available', add='seat-selected')
         update_summary()
@@ -57,13 +82,7 @@ async def seat_selection_page(show_id: int):
             return
             
         seats_payload = []
-        for s in selected_seats:
-            row = s[0]
-            cat = 'Normal'
-            if row in ['A', 'B', 'C']: cat = 'Premium'
-            elif row in ['D', 'E', 'F', 'G', 'H']: cat = 'Executive'
-            else: cat = 'Normal'
-            
+        for s, cat in selected_seats.items():
             seats_payload.append({"seat_name": s, "category": cat})
             
         booking = await api_client.book_seats(movie_id, seats_payload, total_price['value'], show_id)
@@ -74,17 +93,25 @@ async def seat_selection_page(show_id: int):
             ui.notify('Booking failed. Seats might be taken.', type='negative')
 
     with ui.column().classes('w-full items-center p-8'):
-        ui.label(f'Book Tickets: {movie["title"]}').classes('text-3xl font-bold text-white mb-8')
+        ui.label(f'Book Tickets: {movie["title"]}').classes('text-3xl font-bold text-white mb-2')
+        ui.label(f"{show['date']} | Showtime: {show['start_time']}").classes('text-sm text-gray-400 mb-8')
         
-        # Screen
+        # 1. Screen Orientation Indicator ("SCREEN THIS WAY")
         with ui.column().classes('w-full max-w-4xl items-center mb-12'):
-            ui.label('SCREEN').classes('text-gray-500 tracking-[1em] mb-2')
-            ui.element('div').classes('w-full h-2 bg-gradient-to-b from-gray-300 to-transparent shadow-[0_10px_20px_rgba(255,255,255,0.2)] rounded-t-full mb-8')
+            ui.label('SCREEN THIS WAY').classes('text-gray-500 tracking-[1em] mb-2 font-bold text-xs')
+            ui.element('div').classes('w-full h-3 bg-gradient-to-b from-[#E50914] to-transparent shadow-[0_10px_20px_rgba(229,9,20,0.4)] rounded-t-full mb-8')
+        
+        # Dynamic pricing rule explanation banner
+        if applied_rules:
+            with ui.row().classes('items-center gap-2 p-3 rounded-lg mb-8 max-w-2xl bg-primary/10 border border-primary/20'):
+                ui.icon('info', color='primary')
+                rules_str = ", ".join([f"{r['name']} ({r['multiplier']}x)" for r in applied_rules])
+                ui.label(f"Pricing includes active rules: {rules_str}").classes('text-xs text-primary font-medium')
         
         # Seat layout
         with ui.column().classes('gap-6'):
             # Premium
-            ui.label('PREMIUM - Rs. 1000').classes('text-center w-full text-yellow-500 font-bold mb-2')
+            ui.label(f'PREMIUM - Rs. {seat_prices["Premium"]}').classes('text-center w-full text-yellow-500 font-bold mb-2')
             for row in ['A', 'B', 'C']:
                 with ui.row().classes('justify-center gap-2'):
                     ui.label(row).classes('w-6 text-center font-bold self-center')
@@ -100,7 +127,7 @@ async def seat_selection_page(show_id: int):
             ui.separator().classes('my-4')
             
             # Executive
-            ui.label('EXECUTIVE - Rs. 950').classes('text-center w-full text-blue-400 font-bold mb-2')
+            ui.label(f'EXECUTIVE - Rs. {seat_prices["Executive"]}').classes('text-center w-full text-blue-400 font-bold mb-2')
             for row in ['D', 'E', 'F', 'G', 'H']:
                 with ui.row().classes('justify-center gap-2'):
                     ui.label(row).classes('w-6 text-center font-bold self-center')
@@ -116,7 +143,7 @@ async def seat_selection_page(show_id: int):
             ui.separator().classes('my-4')
             
             # Normal
-            ui.label('NORMAL - Rs. 900').classes('text-center w-full text-gray-400 font-bold mb-2')
+            ui.label(f'NORMAL - Rs. {seat_prices["Normal"]}').classes('text-center w-full text-gray-400 font-bold mb-2')
             for row in ['I', 'J', 'K']:
                 with ui.row().classes('justify-center gap-2'):
                     ui.label(row).classes('w-6 text-center font-bold self-center')

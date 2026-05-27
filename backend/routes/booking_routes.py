@@ -45,12 +45,19 @@ async def create_booking(booking_data: BookingCreate, background_tasks: Backgrou
             detail=f"Seats already booked: {', '.join(booked_names)}"
         )
         
-    # Create Booking
+    # Secure server-side dynamic price recalculation and verification
+    from backend.utils.pricing_engine import calculate_dynamic_price
+    calculated_total = 0.0
+    for seat in booking_data.seats:
+        res = calculate_dynamic_price(db, booking_data.show_id, seat.category)
+        calculated_total += res["final_price"]
+        
+    # Create Booking using server-side validated total
     new_booking = Booking(
         user_id=current_user.id,
         movie_id=booking_data.movie_id,
         show_id=booking_data.show_id,
-        total_amount=booking_data.total_amount
+        total_amount=round(calculated_total, 2)
     )
     db.add(new_booking)
     db.flush() # flush to get booking.id
@@ -82,5 +89,19 @@ async def create_booking(booking_data: BookingCreate, background_tasks: Backgrou
 
 @router.get("/user/bookings", response_model=List[BookingResponse])
 async def get_user_bookings(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    bookings = db.query(Booking).filter(Booking.user_id == current_user.id).order_by(Booking.booking_date.desc()).all()
+    from sqlalchemy.orm import joinedload, selectinload
+    bookings = db.query(Booking).options(
+        joinedload(Booking.movie),
+        joinedload(Booking.show).joinedload(Show.screen),
+        selectinload(Booking.booked_seats)
+    ).filter(Booking.user_id == current_user.id).order_by(Booking.booking_date.desc()).all()
     return bookings
+
+@router.get("/price-calculation")
+async def get_price_calculation(
+    show_id: int,
+    category: str,
+    db: Session = Depends(get_db)
+):
+    from backend.utils.pricing_engine import calculate_dynamic_price
+    return calculate_dynamic_price(db, show_id, category)

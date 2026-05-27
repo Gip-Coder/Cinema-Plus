@@ -1,5 +1,5 @@
-from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from pydantic import BaseModel, EmailStr, Field
+from typing import Optional, List, Dict, Any
 from datetime import datetime, date
 
 # --- Token Schemas ---
@@ -80,21 +80,60 @@ class BookedSeatResponse(BookedSeatBase):
 # --- Theatre & Screens ---
 class ScreenBase(BaseModel):
     name: str
+    screen_type: str = "Standard" # IMAX, 3D, Standard, Dolby Atmos
+    total_seats: int = 220
+    seat_layout_json: Optional[str] = None # JSON string format
+    is_active: bool = True
+
+class ScreenCreate(ScreenBase):
+    theatre_id: int
+
+class ScreenUpdate(BaseModel):
+    name: Optional[str] = None
+    screen_type: Optional[str] = None
+    total_seats: Optional[int] = None
+    seat_layout_json: Optional[str] = None
+    is_active: Optional[bool] = None
 
 class ScreenResponse(ScreenBase):
     id: int
     theatre_id: int
+    created_at: datetime
+    updated_at: datetime
     
     class Config:
         from_attributes = True
 
 class TheatreBase(BaseModel):
     name: str
-    location: str
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    timezone: str = "UTC"
+    contact_info: Optional[str] = None
+    description: Optional[str] = None
+    banner_image_url: Optional[str] = None
+    is_active: bool = True
+
+class TheatreCreate(TheatreBase):
+    pass
+
+class TheatreUpdate(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    timezone: Optional[str] = None
+    contact_info: Optional[str] = None
+    description: Optional[str] = None
+    banner_image_url: Optional[str] = None
+    is_active: Optional[bool] = None
 
 class TheatreResponse(TheatreBase):
     id: int
     screens: List[ScreenResponse] = []
+    created_at: datetime
+    updated_at: datetime
     
     class Config:
         from_attributes = True
@@ -158,11 +197,100 @@ class BookingResponse(BookingBase):
     class Config:
         from_attributes = True
 
-# Update MovieResponse to include reviews (circular ref handled by deferred eval)
-MovieResponse.model_rebuild()
-ShowResponse.model_rebuild()
+# --- Dynamic Seat Pricing ---
+class SeatPricingBase(BaseModel):
+    theatre_id: int
+    screen_id: Optional[int] = None
+    seat_category: str # Premium, Executive, Normal
+    base_price: float = Field(..., gt=0)
+    currency: str = "INR"
 
-# --- Auth ---
+class SeatPricingCreate(SeatPricingBase):
+    pass
+
+class SeatPricingUpdate(BaseModel):
+    base_price: float = Field(..., gt=0)
+
+class SeatPricingResponse(SeatPricingBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# --- Pricing Rules ---
+class PricingRuleBase(BaseModel):
+    name: str
+    rule_type: str # weekend, holiday, event, surge, time_based
+    multiplier: float = Field(..., gt=0)
+    priority: int = 0
+    stackable: bool = True
+    valid_from: Optional[date] = None
+    valid_to: Optional[date] = None
+    is_active: bool = True
+    theatre_id: Optional[int] = None
+    screen_id: Optional[int] = None
+
+class PricingRuleCreate(PricingRuleBase):
+    pass
+
+class PricingRuleUpdate(BaseModel):
+    name: Optional[str] = None
+    rule_type: Optional[str] = None
+    multiplier: Optional[float] = Field(None, gt=0)
+    priority: Optional[int] = None
+    stackable: Optional[bool] = None
+    valid_from: Optional[date] = None
+    valid_to: Optional[date] = None
+    is_active: Optional[bool] = None
+
+class PricingRuleResponse(PricingRuleBase):
+    id: int
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# --- Media Asset ---
+class MediaAssetResponse(BaseModel):
+    id: int
+    filename: str
+    storage_provider: str
+    storage_key: Optional[str] = None
+    public_url: Optional[str] = None
+    mime_type: str
+    size_bytes: int
+    asset_type: str
+    thumbnail_url: Optional[str] = None
+    medium_url: Optional[str] = None
+    source_type: str
+    original_source_url: Optional[str] = None
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# --- Audit Log ---
+class AuditLogResponse(BaseModel):
+    id: int
+    user_id: int
+    entity_type: str
+    entity_id: int
+    action: str
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
+    ip_address: Optional[str] = None
+    timestamp: datetime
+    
+    class Config:
+        from_attributes = True
+
+# --- Auth Login ---
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+# Rebuild models for deferred evaluation
+MovieResponse.model_rebuild()
+ShowResponse.model_rebuild()
