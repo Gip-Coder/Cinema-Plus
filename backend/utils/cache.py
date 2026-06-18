@@ -36,11 +36,14 @@ class InMemoryCache:
         self._cache[versioned_key] = (time.time() + ttl, data)
 
     def invalidate(self, pattern: str):
-        """Invalidate all keys matching the standard wildcard pattern (e.g. 'movie:*')."""
+        """Invalidate all keys matching the standard wildcard pattern (e.g. 'admin:*').
+        Matches against both the plain pattern and the versioned pattern so that
+        callers don't need to know the internal versioning scheme."""
         versioned_pattern = self._make_key(pattern)
         keys_to_delete = []
         for key in list(self._cache.keys()):
-            if fnmatch.fnmatch(key, versioned_pattern):
+            # Match the versioned pattern OR the plain pattern as a prefix glob
+            if fnmatch.fnmatch(key, versioned_pattern) or fnmatch.fnmatch(key, pattern + ":*") or fnmatch.fnmatch(key, pattern):
                 keys_to_delete.append(key)
         for key in keys_to_delete:
             del self._cache[key]

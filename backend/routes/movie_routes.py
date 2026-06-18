@@ -1,78 +1,88 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request
+from fastapi import APIRouter, Depends, status, UploadFile, File, Form, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from backend.database import get_db
-from backend.models.models import Movie
 from backend.schemas.schemas import MovieCreate, MovieUpdate, MovieResponse
 from backend.auth.security import get_current_admin_user
+from backend.services.movie_service import MovieService
+from backend.services.media_service import MediaService
+from backend.utils.response import standard_response
 from backend.utils.cache import cache
 
 router = APIRouter()
 
-@router.get("/", response_model=List[MovieResponse])
-async def get_movies(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def get_movie_service(db: Session = Depends(get_db)) -> MovieService:
+    return MovieService(db)
+
+def get_media_service(db: Session = Depends(get_db)) -> MediaService:
+    return MediaService(db)
+
+# Helper to capture client IP
+def get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "127.0.0.1"
+
+@router.get("/")
+async def get_movies(
+    skip: int = 0, 
+    limit: int = 100, 
+    movie_service: MovieService = Depends(get_movie_service)
+):
     cache_key = f"movie:list:{skip}:{limit}"
     cached = cache.get(cache_key)
     if cached is not None:
-        return cached
+        return standard_response(data=cached, message="Movies retrieved from cache")
         
-    movies = db.query(Movie).offset(skip).limit(limit).all()
-    cache.set(cache_key, movies, ttl=300)
-    return movies
+    movies = await movie_service.get_movies(skip, limit)
+    movies_data = [MovieResponse.model_validate(m) for m in movies]
+    cache.set(cache_key, movies_data, ttl=300)
+    return standard_response(data=movies_data, message="Movies retrieved successfully")
 
-@router.get("/search", response_model=List[MovieResponse])
+@router.get("/search")
 async def search_movies(
-    q: str = None, 
-    genre: str = None, 
-    language: str = None, 
+    q: Optional[str] = None, 
+    genre: Optional[str] = None, 
+    language: Optional[str] = None, 
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db)
+    movie_service: MovieService = Depends(get_movie_service)
 ):
     cache_key = f"movie:search:{q}:{genre}:{language}:{skip}:{limit}"
     cached = cache.get(cache_key)
     if cached is not None:
-        return cached
+        return standard_response(data=cached, message="Movies retrieved from cache")
 
-    query = db.query(Movie)
-    if q:
-        query = query.filter(Movie.title.ilike(f"%{q}%"))
-    if genre:
-        query = query.filter(Movie.genre == genre)
-    if language:
-        query = query.filter(Movie.language == language)
-        
-    movies = query.offset(skip).limit(limit).all()
-    cache.set(cache_key, movies, ttl=300)
-    return movies
+    movies = await movie_service.search_movies(q, genre, language, skip, limit)
+    movies_data = [MovieResponse.model_validate(m) for m in movies]
+    cache.set(cache_key, movies_data, ttl=300)
+    return standard_response(data=movies_data, message="Movies retrieved successfully")
 
-@router.get("/{movie_id}", response_model=MovieResponse)
-async def get_movie(movie_id: int, db: Session = Depends(get_db)):
+@router.get("/{movie_id}")
+async def get_movie(
+    movie_id: int, 
+    movie_service: MovieService = Depends(get_movie_service)
+):
     cache_key = f"movie:detail:{movie_id}"
     cached = cache.get(cache_key)
     if cached is not None:
-        return cached
+        return standard_response(data=cached, message="Movie detail retrieved from cache")
 
-    movie = db.query(Movie).filter(Movie.id == movie_id).first()
-    if not movie:
-        raise HTTPException(status_code=404, detail="Movie not found")
-        
-    cache.set(cache_key, movie, ttl=180)
-    return movie
+    movie = await movie_service.get_movie(movie_id)
+    movie_data = MovieResponse.model_validate(movie)
+    cache.set(cache_key, movie_data, ttl=180)
+    return standard_response(data=movie_data, message="Movie detail retrieved successfully")
 
 @router.post("/upload-poster")
 async def upload_poster(
     request: Request,
     file: Optional[UploadFile] = File(None),
     image_url: Optional[str] = Form(None),
-    current_admin=Depends(get_current_admin_user)
+    media_service: MediaService = Depends(get_media_service),
+    current_admin = Depends(get_current_admin_user)
 ):
-    import os
-    import uuid
-    from PIL import Image
-    from backend.utils.media_processor import validate_external_image_url
-    
-    # Support JSON payload
+    # Support JSON payload (for URL-based uploads from frontend JSON request)
     content_type = request.headers.get("content-type", "")
     if "application/json" in content_type:
         try:
@@ -81,109 +91,54 @@ async def upload_poster(
         except Exception:
             pass
 
+    from fastapi import HTTPException
     if not file and not image_url:
         raise HTTPException(
             status_code=400,
             detail="Either file or image_url must be provided."
         )
 
+    client_ip = get_client_ip(request)
     if file:
-        # 1. MIME Validation
-        allowed_mimes = {"image/jpeg", "image/png", "image/webp"}
-        if file.content_type not in allowed_mimes:
-            raise HTTPException(status_code=400, detail="Invalid image type. Only JPEG, PNG, and WEBP allowed.")
-            
-        # 2. Max size check (2MB)
-        content = await file.read()
-        if len(content) > 2 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="File size exceeds the 2MB limit.")
-            
-        # Reset read pointer
-        file.file.seek(0)
-        
-        # 3. Broken image validation (Pillow header scan)
-        try:
-            img = Image.open(file.file)
-            img.verify()
-        except Exception:
-            raise HTTPException(status_code=400, detail="Corrupted or invalid image headers.")
-            
-        # Reset read pointer and save securely
-        file.file.seek(0)
-        ext = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
-        filename = f"{uuid.uuid4().hex}.{ext}"
-        
-        # Create target directory
-        os.makedirs(os.path.join("backend", "uploads", "posters"), exist_ok=True)
-        os.makedirs(os.path.join("uploads", "posters"), exist_ok=True)
-        
-        file_path = os.path.join("backend", "uploads", "posters", filename)
-        file_path_root = os.path.join("uploads", "posters", filename)
-        
-        with open(file_path, "wb") as buffer:
-            buffer.write(content)
-            
-        with open(file_path_root, "wb") as buffer:
-            buffer.write(content)
-            
-        url = f"/uploads/posters/{filename}"
+        asset = await media_service.upload_local_media(file, "poster", current_admin, client_ip)
     else:
-        # Validate external URL
-        processed = validate_external_image_url(image_url)
-        url = processed["public_url"]
+        # Cast image_url to str (already verified truthiness)
+        asset = await media_service.register_external_media(str(image_url), "poster", current_admin, client_ip)
         
-    return {"poster_url": url}
+    return standard_response(data={"poster_url": asset.public_url}, message="Poster uploaded successfully")
 
-@router.post("/", response_model=MovieResponse, status_code=status.HTTP_201_CREATED)
-async def create_movie(movie: MovieCreate, db: Session = Depends(get_db), current_admin=Depends(get_current_admin_user)):
-    # Add temporary logging for debugging movie creation flow
-    print(f"[DEBUG MOVIE CREATION] Payload received: {movie.model_dump()}")
-    print(f"[DEBUG MOVIE CREATION] Poster URL: {movie.poster_url}")
-    
-    movie_dict = movie.model_dump()
-    if not movie_dict.get("poster_url") or not movie_dict["poster_url"].strip():
-        movie_dict["poster_url"] = "/uploads/defaults/no-poster.png"
-        
-    new_movie = Movie(**movie_dict)
-    db.add(new_movie)
-    db.commit()
-    db.refresh(new_movie)
-    
-    print(f"[DEBUG MOVIE CREATION] DB insert success. Inserted Movie ID: {new_movie.id}")
-    
-    # Invalidate movie cache
-    cache.invalidate("movie:*")
-    return new_movie
+@router.post("/", status_code=status.HTTP_201_CREATED)
+async def create_movie(
+    request: Request,
+    movie: MovieCreate, 
+    movie_service: MovieService = Depends(get_movie_service), 
+    current_admin = Depends(get_current_admin_user)
+):
+    client_ip = get_client_ip(request)
+    db_movie = await movie_service.create_movie(movie, current_admin, client_ip)
+    movie_data = MovieResponse.model_validate(db_movie)
+    return standard_response(data=movie_data, message="Movie created successfully")
 
-@router.put("/{movie_id}", response_model=MovieResponse)
-async def update_movie(movie_id: int, movie_update: MovieUpdate, db: Session = Depends(get_db), current_admin=Depends(get_current_admin_user)):
-    db_movie = db.query(Movie).filter(Movie.id == movie_id).first()
-    if not db_movie:
-        raise HTTPException(status_code=404, detail="Movie not found")
-    
-    update_data = movie_update.model_dump(exclude_unset=True)
-    if "poster_url" in update_data and (not update_data["poster_url"] or not update_data["poster_url"].strip()):
-        update_data["poster_url"] = "/uploads/defaults/no-poster.png"
-        
-    for key, value in update_data.items():
-        setattr(db_movie, key, value)
-        
-    db.commit()
-    db.refresh(db_movie)
-    
-    # Invalidate movie cache
-    cache.invalidate("movie:*")
-    return db_movie
+@router.put("/{movie_id}")
+async def update_movie(
+    movie_id: int, 
+    request: Request, 
+    movie_update: MovieUpdate, 
+    movie_service: MovieService = Depends(get_movie_service), 
+    current_admin = Depends(get_current_admin_user)
+):
+    client_ip = get_client_ip(request)
+    db_movie = await movie_service.update_movie(movie_id, movie_update, current_admin, client_ip)
+    movie_data = MovieResponse.model_validate(db_movie)
+    return standard_response(data=movie_data, message="Movie updated successfully")
 
 @router.delete("/{movie_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_movie(movie_id: int, db: Session = Depends(get_db), current_admin=Depends(get_current_admin_user)):
-    db_movie = db.query(Movie).filter(Movie.id == movie_id).first()
-    if not db_movie:
-        raise HTTPException(status_code=404, detail="Movie not found")
-        
-    db.delete(db_movie)
-    db.commit()
-    
-    # Invalidate movie cache
-    cache.invalidate("movie:*")
+async def delete_movie(
+    movie_id: int, 
+    request: Request, 
+    movie_service: MovieService = Depends(get_movie_service), 
+    current_admin = Depends(get_current_admin_user)
+):
+    client_ip = get_client_ip(request)
+    await movie_service.delete_movie(movie_id, current_admin, client_ip)
     return None

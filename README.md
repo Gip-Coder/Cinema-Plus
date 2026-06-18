@@ -73,9 +73,9 @@ Default accounts:
 
 ### 5. Start the Backend
 ```bash
-uvicorn backend.main:app --reload --port 8000
+uvicorn backend.main:app --reload --port 8001
 ```
-*API documentation available at http://localhost:8000/docs*
+*API documentation available at http://localhost:8001/docs*
 
 ### 6. Start the Frontend
 In a new terminal window:
@@ -84,6 +84,10 @@ In a new terminal window:
 python frontend/main.py
 ```
 *Web app available at http://localhost:8080*
+
+Optional frontend settings:
+- `FRONTEND_PORT=8081` runs the UI on another port.
+- `NICEGUI_RELOAD=true` enables NiceGUI's auto-reloader during development.
 
 ## Features
 - Dynamic visual seat selection

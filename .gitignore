@@ -3,6 +3,10 @@ __pycache__/
 .venv/
 *.db
 .env
+.env.local
+.next/
+node_modules/
+out/
 scratch/
 backend/uploads/posters/*.jpg
 backend/uploads/posters/*.png

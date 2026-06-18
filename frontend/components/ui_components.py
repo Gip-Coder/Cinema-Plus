@@ -37,6 +37,10 @@ def apply_theme():
                 0%, 100% { box-shadow: 0 0 8px rgba(229, 9, 20, 0.3); }
                 50%      { box-shadow: 0 0 24px rgba(229, 9, 20, 0.6); }
             }
+            @keyframes pulseGlowWhite {
+                0%, 100% { box-shadow: 0 0 8px rgba(255, 255, 255, 0.4); }
+                50%      { box-shadow: 0 0 24px rgba(255, 255, 255, 0.8); }
+            }
             @keyframes shimmer {
                 0%   { background-position: -200% 0; }
                 100% { background-position: 200% 0; }
@@ -88,9 +92,10 @@ def apply_theme():
                 border: 1px solid transparent;
             }
             .seat:hover { transform: scale(1.15); }
-            .seat-available { background: linear-gradient(135deg, #2ecc71, #27ae60); }
-            .seat-booked    { background: linear-gradient(135deg, #e74c3c, #c0392b); cursor: not-allowed; opacity: 0.7; }
-            .seat-selected  { background: linear-gradient(135deg, #3498db, #2980b9); box-shadow: 0 0 12px rgba(52,152,219,0.5); animation: pulseGlow 2s infinite; }
+            .seat-available { background: linear-gradient(135deg, #e50914, #b81d24) !important; }
+            .seat-booked    { background: linear-gradient(135deg, #333333, #222222) !important; cursor: not-allowed !important; opacity: 0.6 !important; }
+            .seat-reserved  { background: linear-gradient(135deg, #f39c12, #d35400) !important; cursor: not-allowed !important; opacity: 0.8 !important; }
+            .seat-selected  { background: linear-gradient(135deg, #ffffff, #e5e5e5) !important; border: 2px solid #000000 !important; box-shadow: 0 0 12px rgba(255,255,255,0.5) !important; animation: pulseGlowWhite 2s infinite !important; }
 
             /* ===== BUTTONS ===== */
             .q-btn {
@@ -146,23 +151,27 @@ def apply_theme():
 
 def navbar():
     with ui.header().classes('justify-between items-center py-3 px-8').style('border-bottom: 1px solid rgba(255,255,255,0.06)'):
-        with ui.row().classes('items-center gap-2 cursor-pointer').on('click', lambda: ui.navigate.to('/')):
+        # Logo routing: route to /admin if admin, otherwise to /
+        with ui.row().classes('items-center gap-2 cursor-pointer').on('click', lambda: ui.navigate.to('/admin') if api_client.is_authenticated() and api_client.is_admin() else ui.navigate.to('/')):
             ui.icon('local_movies', color='primary').classes('text-3xl')
             ui.label('CINEMA PLUS').classes('text-2xl font-extrabold text-white tracking-[0.25em]').style('letter-spacing: 0.25em; background: linear-gradient(90deg, #E50914, #ff6b6b); -webkit-background-clip: text; -webkit-text-fill-color: transparent;')
         
         with ui.row().classes('items-center gap-1'):
-            ui.link('Movies', '/').classes('text-white hover:text-primary transition-colors no-underline text-sm font-medium px-4 py-2 rounded-lg hover:bg-white/5')
+            if not (api_client.is_authenticated() and api_client.is_admin()):
+                ui.link('Movies', '/').classes('text-white hover:text-primary transition-colors no-underline text-sm font-medium px-4 py-2 rounded-lg hover:bg-white/5')
             
             if api_client.is_authenticated():
                 if api_client.is_admin():
                     ui.link('Dashboard', '/admin').classes('text-white hover:text-primary transition-colors no-underline text-sm font-medium px-4 py-2 rounded-lg hover:bg-white/5')
-                ui.link('My Bookings', '/bookings').classes('text-white hover:text-primary transition-colors no-underline text-sm font-medium px-4 py-2 rounded-lg hover:bg-white/5')
+                else:
+                    ui.link('My Bookings', '/bookings').classes('text-white hover:text-primary transition-colors no-underline text-sm font-medium px-4 py-2 rounded-lg hover:bg-white/5')
                 
                 ui.separator().props('vertical').classes('mx-2 h-6 opacity-20')
                 
                 with ui.button(icon='account_circle', color='transparent').classes('text-white'):
                     with ui.menu():
-                        ui.menu_item('My Profile', on_click=lambda: ui.navigate.to('/profile'))
+                        if not api_client.is_admin():
+                            ui.menu_item('My Profile', on_click=lambda: ui.navigate.to('/profile'))
                         ui.menu_item('Logout', on_click=lambda: logout())
             else:
                 ui.button('Login', color='primary', on_click=lambda: ui.navigate.to('/login')).classes('px-6 py-1 rounded-full font-bold text-sm')

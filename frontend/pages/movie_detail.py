@@ -5,6 +5,9 @@ import asyncio
 
 @ui.page('/movie/{movie_id}')
 async def movie_detail_page(movie_id: int):
+    if api_client.is_authenticated() and api_client.is_admin():
+        ui.navigate.to('/admin')
+        return
     apply_theme()
     navbar()
     
@@ -19,14 +22,14 @@ async def movie_detail_page(movie_id: int):
             asyncio.gather(movie_task, shows_task, reviews_task, return_exceptions=True),
             timeout=4.0
         )
-        movie = results[0] if not isinstance(results[0], Exception) else None
-        shows = results[1] if not isinstance(results[1], Exception) else []
-        reviews = results[2] if not isinstance(results[2], Exception) else []
+        movie = results[0] if not isinstance(results[0], BaseException) else None
+        shows = results[1] if not isinstance(results[1], BaseException) else []
+        reviews = results[2] if not isinstance(results[2], BaseException) else []
         
         # Trigger notification if some APIs failed
-        if isinstance(results[1], Exception):
+        if isinstance(results[1], BaseException):
             ui.notify("Failed to load showtimes.", type="warning")
-        if isinstance(results[2], Exception):
+        if isinstance(results[2], BaseException):
             ui.notify("Failed to load reviews.", type="warning")
             
     except asyncio.TimeoutError:
@@ -46,7 +49,7 @@ async def movie_detail_page(movie_id: int):
         # Poster Column
         with ui.column().classes('w-1/3'):
             # Frontend fallback logic: poster = movie.poster_url if movie.poster_url else "/uploads/defaults/no-poster.png"
-            poster = movie.get("poster_url") if movie.get("poster_url") else "/uploads/defaults/no-poster.png"
+            poster = str(movie.get("poster_url") or "/uploads/defaults/no-poster.png")
             
             import os
             base = os.getenv("API_BASE_URL", "http://localhost:8001").replace("/api", "")

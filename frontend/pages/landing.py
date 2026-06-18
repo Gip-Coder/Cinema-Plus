@@ -4,6 +4,9 @@ from frontend.components.ui_components import apply_theme, navbar
 
 @ui.page('/')
 async def landing_page():
+    if api_client.is_authenticated() and api_client.is_admin():
+        ui.navigate.to('/admin')
+        return
     apply_theme()
     navbar()
     

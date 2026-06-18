@@ -7,6 +7,15 @@ load_dotenv()
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8001")
 
+# Monkey-patch httpx.Response.json to transparently unwrap standard API envelopes
+_original_json = httpx.Response.json
+def _custom_json(self, *args, **kwargs):
+    data = _original_json(self, *args, **kwargs)
+    if isinstance(data, dict) and "success" in data and "data" in data and "message" in data:
+        return data["data"]
+    return data
+httpx.Response.json = _custom_json
+
 class APIClient:
     def __init__(self):
         self.token: Optional[str] = None
@@ -66,7 +75,7 @@ class APIClient:
             return response.json()
         return None
 
-    async def update_profile(self, username: str = None, email: str = None) -> bool:
+    async def update_profile(self, username: Optional[str] = None, email: Optional[str] = None) -> bool:
         params = {}
         if username: params["username"] = username
         if email: params["email"] = email
@@ -85,7 +94,7 @@ class APIClient:
             return response.json()
         return []
 
-    async def search_movies(self, q: str = None, genre: str = None, language: str = None) -> List[Dict]:
+    async def search_movies(self, q: Optional[str] = None, genre: Optional[str] = None, language: Optional[str] = None) -> List[Dict]:
         params = {}
         if q: params["q"] = q
         if genre: params["genre"] = genre
@@ -139,9 +148,48 @@ class APIClient:
             return response.content
         return b""
 
+    # --- Reservations ---
+    async def create_reservation(self, show_id: int, seats: List[str]) -> Optional[Dict]:
+        payload = {
+            "show_id": show_id,
+            "seats": seats
+        }
+        response = await self.client.post("/api/reservations", json=payload)
+        if response.status_code == 201:
+            return response.json()
+        return None
+
+    async def get_reservation(self, group_id: int) -> Optional[Dict]:
+        response = await self.client.get(f"/api/reservations/{group_id}")
+        if response.status_code == 200:
+            return response.json()
+        return None
+
+    async def cancel_reservation(self, group_id: int) -> bool:
+        response = await self.client.delete(f"/api/reservations/{group_id}")
+        return response.status_code == 200
+
+    async def confirm_reservation(self, group_id: int) -> Optional[Dict]:
+        response = await self.client.post(f"/api/reservations/{group_id}/confirm")
+        if response.status_code in (200, 201):
+            return response.json()
+        return None
+
+    async def get_show_seat_statuses(self, show_id: int) -> Dict:
+        response = await self.client.get(f"/api/shows/{show_id}/seat-status")
+        if response.status_code == 200:
+            return response.json()
+        return {"booked": [], "reserved": []}
+
     # --- Admin ---
     async def get_admin_stats(self) -> Dict:
         response = await self.client.get("/api/admin/stats")
+        if response.status_code == 200:
+            return response.json()
+        return {}
+
+    async def get_show_stats(self, show_id: int) -> Dict:
+        response = await self.client.get(f"/api/admin/shows/{show_id}/stats")
         if response.status_code == 200:
             return response.json()
         return {}
@@ -184,7 +232,7 @@ class APIClient:
         response = await self.client.delete(f"/api/admin/bookings/{booking_id}")
         return response.status_code == 200
 
-    async def upload_poster(self, file_content: bytes = None, filename: str = None, image_url: str = None) -> Optional[str]:
+    async def upload_poster(self, file_content: Optional[bytes] = None, filename: Optional[str] = None, image_url: Optional[str] = None) -> Optional[str]:
         if file_content is not None:
             files = {"file": (filename, file_content, "image/jpeg")}
             response = await self.client.post("/api/movies/upload-poster", files=files)
@@ -199,7 +247,7 @@ class APIClient:
 
     # --- Schedule ---
     async def create_theatre(self, data: Dict) -> bool:
-        response = await self.client.post("/api/schedule/theatres", json=data)
+        response = await self.client.post("/api/admin/theatres", json=data)
         return response.status_code == 200
         
     async def get_theatres(self) -> List[Dict]:
@@ -208,8 +256,8 @@ class APIClient:
             return response.json()
         return []
         
-    async def create_screen(self, theatre_id: int, data: Dict) -> bool:
-        response = await self.client.post(f"/api/schedule/screens?theatre_id={theatre_id}", json=data)
+    async def create_screen(self, data: Dict) -> bool:
+        response = await self.client.post("/api/admin/screens", json=data)
         return response.status_code == 200
         
     async def get_screens(self) -> List[Dict]:
@@ -302,7 +350,7 @@ class APIClient:
         response = await self.client.put(f"/api/admin/pricing/rules/{rule_id}", json=data)
         return response.status_code == 200
 
-    async def upload_media_asset(self, file_content: bytes = None, filename: str = None, asset_type: str = "original", image_url: str = None) -> Optional[Dict]:
+    async def upload_media_asset(self, file_content: Optional[bytes] = None, filename: Optional[str] = None, asset_type: str = "original", image_url: Optional[str] = None) -> Optional[Dict]:
         if file_content is not None:
             files = {"file": (filename, file_content, "image/jpeg")}
             response = await self.client.post(f"/api/admin/media/upload?asset_type={asset_type}", files=files)
@@ -317,6 +365,79 @@ class APIClient:
 
     async def delete_media_asset(self, asset_id: int) -> bool:
         response = await self.client.delete(f"/api/admin/media/{asset_id}")
+        return response.status_code == 200
+
+    # --- Layouts ---
+    async def generate_layout_preview(self, total_seats: int, template: str, custom_cols: Optional[int] = None) -> Optional[Dict]:
+        payload = {"total_seats": total_seats, "template": template}
+        if custom_cols is not None:
+            payload["custom_cols"] = custom_cols
+        response = await self.client.post("/api/layouts/generate", json=payload)
+        if response.status_code == 200:
+            return response.json()
+        return None
+
+    async def save_layout(self, screen_id: int, layout_name: str, seats: List[Dict], layout_type: str, rows: int, cols: int) -> Optional[Dict]:
+        payload = {
+            "screen_id": screen_id,
+            "layout_name": layout_name,
+            "layout_type": layout_type,
+            "seats": seats,
+            "rows": rows,
+            "cols": cols
+        }
+        response = await self.client.post("/api/layouts/save", json=payload)
+        if response.status_code == 201:
+            return response.json()
+        return None
+
+    async def get_layout_for_screen(self, screen_id: int) -> Optional[Dict]:
+        response = await self.client.get(f"/api/layouts/screen/{screen_id}")
+        if response.status_code == 200:
+            return response.json()
+        return None
+
+    async def get_all_layouts_for_screen(self, screen_id: int) -> List[Dict]:
+        response = await self.client.get(f"/api/layouts/screen/{screen_id}/all")
+        if response.status_code == 200:
+            return response.json()
+        return []
+
+    async def get_layout_by_id(self, layout_id: int) -> Optional[Dict]:
+        response = await self.client.get(f"/api/layouts/{layout_id}")
+        if response.status_code == 200:
+            return response.json()
+        return None
+
+    async def publish_layout(self, layout_id: int) -> bool:
+        response = await self.client.put(f"/api/layouts/{layout_id}/publish")
+        return response.status_code == 200
+
+    async def update_layout_seats(self, layout_id: int, seats: List[Dict], rows: int, cols: int) -> Optional[Dict]:
+        payload = {
+            "seats": seats,
+            "rows": rows,
+            "cols": cols
+        }
+        response = await self.client.put(f"/api/layouts/{layout_id}/seats", json=payload)
+        if response.status_code == 200:
+            return response.json()
+        return None
+
+    async def get_layout_stats(self, layout_id: int) -> Dict:
+        response = await self.client.get(f"/api/layouts/{layout_id}/stats")
+        if response.status_code == 200:
+            return response.json()
+        return {}
+
+    async def get_layout_templates(self) -> List[Dict]:
+        response = await self.client.get("/api/layouts/templates/list")
+        if response.status_code == 200:
+            return response.json()
+        return []
+
+    async def delete_layout(self, layout_id: int) -> bool:
+        response = await self.client.delete(f"/api/layouts/{layout_id}")
         return response.status_code == 200
 
 api_client = APIClient()

@@ -1,80 +1,107 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status, Request
 from sqlalchemy.orm import Session
 from typing import List
 from backend.database import get_db
-from backend.models.models import Theatre, Screen, Show
-from backend.schemas.schemas import TheatreBase, TheatreResponse, ScreenBase, ScreenResponse, ShowCreate, ShowResponse
+from backend.schemas.schemas import TheatreBase, TheatreResponse, ScreenBase, ScreenResponse, ShowCreate, ShowResponse, ScreenCreate
 from backend.auth.security import get_current_admin_user
+from backend.services.theatre_service import TheatreService
+from backend.utils.response import standard_response
 
 router = APIRouter()
 
-# --- Theatres ---
-@router.post("/theatres", response_model=TheatreResponse)
-async def create_theatre(theatre: TheatreBase, db: Session = Depends(get_db), current_admin=Depends(get_current_admin_user)):
-    db_theatre = Theatre(**theatre.model_dump())
-    db.add(db_theatre)
-    db.commit()
-    db.refresh(db_theatre)
-    return db_theatre
+def get_theatre_service(db: Session = Depends(get_db)) -> TheatreService:
+    return TheatreService(db)
 
-@router.get("/theatres", response_model=List[TheatreResponse])
-async def get_theatres(db: Session = Depends(get_db)):
-    return db.query(Theatre).all()
+def get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "127.0.0.1"
+
+# --- Theatres ---
+@router.post("/theatres")
+async def create_theatre(
+    request: Request,
+    theatre: TheatreBase, 
+    theatre_service: TheatreService = Depends(get_theatre_service), 
+    current_admin = Depends(get_current_admin_user)
+):
+    ip = get_client_ip(request)
+    db_theatre = await theatre_service.create_theatre(theatre, current_admin, ip)
+    theatre_data = TheatreResponse.model_validate(db_theatre)
+    return standard_response(data=theatre_data, message="Theatre created successfully")
+
+@router.get("/theatres")
+async def get_theatres(theatre_service: TheatreService = Depends(get_theatre_service)):
+    theatres = await theatre_service.get_theatres()
+    theatres_data = [TheatreResponse.model_validate(t) for t in theatres]
+    return standard_response(data=theatres_data, message="Theatres retrieved successfully")
 
 # --- Screens ---
-@router.post("/screens", response_model=ScreenResponse)
-async def create_screen(screen: ScreenBase, theatre_id: int, db: Session = Depends(get_db), current_admin=Depends(get_current_admin_user)):
-    db_screen = Screen(**screen.model_dump(), theatre_id=theatre_id)
-    db.add(db_screen)
-    db.commit()
-    db.refresh(db_screen)
-    return db_screen
+@router.post("/screens")
+async def create_screen(
+    request: Request,
+    screen: ScreenBase, 
+    theatre_id: int, 
+    theatre_service: TheatreService = Depends(get_theatre_service), 
+    current_admin = Depends(get_current_admin_user)
+):
+    ip = get_client_ip(request)
+    screen_create = ScreenCreate(**screen.model_dump(), theatre_id=theatre_id)
+    db_screen = await theatre_service.create_screen(screen_create, current_admin, ip)
+    screen_data = ScreenResponse.model_validate(db_screen)
+    return standard_response(data=screen_data, message="Screen created successfully")
 
-@router.get("/screens", response_model=List[ScreenResponse])
-async def get_screens(db: Session = Depends(get_db)):
-    return db.query(Screen).all()
+@router.get("/screens")
+async def get_screens(theatre_service: TheatreService = Depends(get_theatre_service)):
+    screens = await theatre_service.get_screens()
+    screens_data = [ScreenResponse.model_validate(s) for s in screens]
+    return standard_response(data=screens_data, message="Screens retrieved successfully")
 
 # --- Shows ---
-@router.post("/shows", response_model=ShowResponse)
-async def create_show(show: ShowCreate, db: Session = Depends(get_db), current_admin=Depends(get_current_admin_user)):
-    db_show = Show(**show.model_dump())
-    db.add(db_show)
-    db.commit()
-    db.refresh(db_show)
-    return db_show
+@router.post("/shows")
+async def create_show(
+    request: Request,
+    show: ShowCreate, 
+    theatre_service: TheatreService = Depends(get_theatre_service), 
+    current_admin = Depends(get_current_admin_user)
+):
+    ip = get_client_ip(request)
+    db_show = await theatre_service.create_show(show, current_admin, ip)
+    show_data = ShowResponse.model_validate(db_show)
+    return standard_response(data=show_data, message="Show created successfully")
 
-@router.get("/shows/{movie_id}", response_model=List[ShowResponse])
-async def get_shows_by_movie(movie_id: int, db: Session = Depends(get_db)):
-    from sqlalchemy.orm import joinedload
-    return db.query(Show).options(
-        joinedload(Show.movie),
-        joinedload(Show.screen)
-    ).filter(Show.movie_id == movie_id).all()
+@router.get("/shows/{movie_id}")
+async def get_shows_by_movie(
+    movie_id: int, 
+    theatre_service: TheatreService = Depends(get_theatre_service)
+):
+    shows = await theatre_service.get_shows_by_movie(movie_id)
+    shows_data = [ShowResponse.model_validate(s) for s in shows]
+    return standard_response(data=shows_data, message="Shows for movie retrieved successfully")
 
-@router.get("/shows/all/", response_model=List[ShowResponse])
-async def get_all_shows(db: Session = Depends(get_db)):
-    from sqlalchemy.orm import joinedload
-    return db.query(Show).options(
-        joinedload(Show.movie),
-        joinedload(Show.screen)
-    ).all()
+@router.get("/shows/all/")
+async def get_all_shows(theatre_service: TheatreService = Depends(get_theatre_service)):
+    shows = await theatre_service.get_all_shows()
+    shows_data = [ShowResponse.model_validate(s) for s in shows]
+    return standard_response(data=shows_data, message="All shows retrieved successfully")
 
-@router.get("/shows/show/{show_id}", response_model=ShowResponse)
-async def get_show(show_id: int, db: Session = Depends(get_db)):
-    from sqlalchemy.orm import joinedload
-    show = db.query(Show).options(
-        joinedload(Show.movie),
-        joinedload(Show.screen)
-    ).filter(Show.id == show_id).first()
-    if not show:
-        raise HTTPException(status_code=404, detail="Show not found")
-    return show
+@router.get("/shows/show/{show_id}")
+async def get_show(
+    show_id: int, 
+    theatre_service: TheatreService = Depends(get_theatre_service)
+):
+    show = await theatre_service.get_show(show_id)
+    show_data = ShowResponse.model_validate(show)
+    return standard_response(data=show_data, message="Show retrieved successfully")
 
 @router.delete("/shows/{show_id}")
-async def delete_show(show_id: int, db: Session = Depends(get_db), current_admin=Depends(get_current_admin_user)):
-    db_show = db.query(Show).filter(Show.id == show_id).first()
-    if not db_show:
-        raise HTTPException(status_code=404, detail="Show not found")
-    db.delete(db_show)
-    db.commit()
-    return {"message": "Deleted"}
+async def delete_show(
+    request: Request,
+    show_id: int, 
+    theatre_service: TheatreService = Depends(get_theatre_service), 
+    current_admin = Depends(get_current_admin_user)
+):
+    ip = get_client_ip(request)
+    await theatre_service.delete_show(show_id, current_admin, ip)
+    return standard_response(message="Show deleted successfully")

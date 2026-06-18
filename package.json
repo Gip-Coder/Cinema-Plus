@@ -1,0 +1,37 @@
+{
+  "name": "cinema-plus-next-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "lint": "eslint \"src/**/*.{ts,tsx}\" \"next.config.ts\" \"tailwind.config.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@radix-ui/react-slot": "^1.1.1",
+    "@tanstack/react-query": "^5.59.20",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.468.0",
+    "next": "^15.0.0",
+    "next-themes": "^0.4.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^2.5.5",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.2.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.1",
+    "@types/react-dom": "^19.0.2",
+    "eslint": "^9.16.0",
+    "eslint-config-next": "^15.0.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "^5.7.2"
+  }
+}

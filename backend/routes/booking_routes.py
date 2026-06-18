@@ -1,107 +1,55 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List
 from backend.database import get_db
-from backend.models.models import BookedSeat, Booking, Movie, Show
-from backend.schemas.schemas import SeatBase, BookedSeatResponse, BookingCreate, BookingResponse
+from backend.schemas.schemas import BookedSeatResponse, BookingCreate, BookingResponse
 from backend.auth.security import get_current_user
-from backend.utils.ticket_generator import generate_ticket_pdf
-from backend.utils.email_service import send_booking_confirmation
+from backend.services.booking_service import BookingService
+from backend.utils.response import standard_response
 
 router = APIRouter()
 
-@router.get("/seats/{show_id}", response_model=List[BookedSeatResponse])
-async def get_booked_seats(show_id: int, db: Session = Depends(get_db)):
-    show = db.query(Show).filter(Show.id == show_id).first()
-    if not show:
-        raise HTTPException(status_code=404, detail="Show not found")
-        
-    booked_seats = db.query(BookedSeat).filter(BookedSeat.show_id == show_id).all()
-    return booked_seats
+def get_booking_service(db: Session = Depends(get_db)) -> BookingService:
+    return BookingService(db)
 
-@router.post("/book", response_model=BookingResponse, status_code=status.HTTP_201_CREATED)
-async def create_booking(booking_data: BookingCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    # Verify show exists
-    if booking_data.show_id:
-        show = db.query(Show).filter(Show.id == booking_data.show_id).first()
-        if not show:
-            raise HTTPException(status_code=404, detail="Show not found")
-            
-    # Verify seats are available
-    requested_seat_names = [seat.seat_name for seat in booking_data.seats]
-    
-    query = db.query(BookedSeat).filter(BookedSeat.seat_name.in_(requested_seat_names))
-    if booking_data.show_id:
-        query = query.filter(BookedSeat.show_id == booking_data.show_id)
-    else:
-        query = query.filter(BookedSeat.movie_id == booking_data.movie_id)
-        
-    existing_bookings = query.all()
-    
-    if existing_bookings:
-        booked_names = [b.seat_name for b in existing_bookings]
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
-            detail=f"Seats already booked: {', '.join(booked_names)}"
-        )
-        
-    # Secure server-side dynamic price recalculation and verification
-    from backend.utils.pricing_engine import calculate_dynamic_price
-    calculated_total = 0.0
-    for seat in booking_data.seats:
-        res = calculate_dynamic_price(db, booking_data.show_id, seat.category)
-        calculated_total += res["final_price"]
-        
-    # Create Booking using server-side validated total
-    new_booking = Booking(
-        user_id=current_user.id,
-        movie_id=booking_data.movie_id,
-        show_id=booking_data.show_id,
-        total_amount=round(calculated_total, 2)
-    )
-    db.add(new_booking)
-    db.flush() # flush to get booking.id
-    
-    # Create BookedSeats
-    for seat in booking_data.seats:
-        new_seat = BookedSeat(
-            booking_id=new_booking.id,
-            movie_id=booking_data.movie_id,
-            show_id=booking_data.show_id,
-            seat_name=seat.seat_name,
-            category=seat.category
-        )
-        db.add(new_seat)
-        
-    db.commit()
-    db.refresh(new_booking)
+from backend.services.seat_state_service import SeatStateService
 
-    # Send confirmation email in background
-    try:
-        movie = db.query(Movie).filter(Movie.id == new_booking.movie_id).first()
-        show = db.query(Show).filter(Show.id == new_booking.show_id).first() if new_booking.show_id else None
-        pdf_bytes = generate_ticket_pdf(new_booking, current_user, movie, show)
-        background_tasks.add_task(send_booking_confirmation, current_user.email, new_booking.id, movie.title, pdf_bytes)
-    except Exception as e:
-        print(f"Email preparation error: {e}")
+def get_seat_state_service(db: Session = Depends(get_db)) -> SeatStateService:
+    return SeatStateService(db)
 
-    return new_booking
+@router.get("/seats/{show_id}")
+async def get_booked_seats(
+    show_id: int, 
+    seat_state_service: SeatStateService = Depends(get_seat_state_service)
+):
+    statuses = seat_state_service.get_seat_statuses(show_id)
+    return standard_response(data=statuses, message="Seat statuses retrieved successfully")
 
-@router.get("/user/bookings", response_model=List[BookingResponse])
-async def get_user_bookings(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    from sqlalchemy.orm import joinedload, selectinload
-    bookings = db.query(Booking).options(
-        joinedload(Booking.movie),
-        joinedload(Booking.show).joinedload(Show.screen),
-        selectinload(Booking.booked_seats)
-    ).filter(Booking.user_id == current_user.id).order_by(Booking.booking_date.desc()).all()
-    return bookings
+@router.post("/book", status_code=status.HTTP_201_CREATED)
+async def create_booking(
+    booking_data: BookingCreate, 
+    background_tasks: BackgroundTasks, 
+    booking_service: BookingService = Depends(get_booking_service), 
+    current_user = Depends(get_current_user)
+):
+    new_booking = await booking_service.create_booking(booking_data, current_user, background_tasks)
+    booking_data_res = BookingResponse.model_validate(new_booking)
+    return standard_response(data=booking_data_res, message="Booking created successfully")
+
+@router.get("/user/bookings")
+async def get_user_bookings(
+    booking_service: BookingService = Depends(get_booking_service), 
+    current_user = Depends(get_current_user)
+):
+    bookings = await booking_service.get_user_bookings(current_user.id)
+    bookings_data = [BookingResponse.model_validate(b) for b in bookings]
+    return standard_response(data=bookings_data, message="User bookings retrieved successfully")
 
 @router.get("/price-calculation")
 async def get_price_calculation(
     show_id: int,
     category: str,
-    db: Session = Depends(get_db)
+    booking_service: BookingService = Depends(get_booking_service)
 ):
-    from backend.utils.pricing_engine import calculate_dynamic_price
-    return calculate_dynamic_price(db, show_id, category)
+    calc_res = await booking_service.get_price_calculation(show_id, category)
+    return standard_response(data=calc_res, message="Price calculation completed")

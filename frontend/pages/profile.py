@@ -8,6 +8,10 @@ async def profile_page():
         ui.navigate.to('/login')
         return
         
+    if api_client.is_admin():
+        ui.navigate.to('/admin')
+        return
+        
     apply_theme()
     navbar()
     

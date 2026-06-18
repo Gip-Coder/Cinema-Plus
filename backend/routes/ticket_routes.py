@@ -1,31 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from backend.database import get_db
-from backend.models.models import Booking
 from backend.auth.security import get_current_user
-from backend.utils.ticket_generator import generate_ticket_pdf
+from backend.services.booking_service import BookingService
 
 router = APIRouter()
 
+def get_booking_service(db: Session = Depends(get_db)) -> BookingService:
+    return BookingService(db)
+
 @router.get("/ticket/{booking_id}/pdf")
-async def download_ticket(booking_id: int, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
-    from sqlalchemy.orm import joinedload
-    booking = db.query(Booking).options(
-        joinedload(Booking.user),
-        joinedload(Booking.movie),
-        joinedload(Booking.show)
-    ).filter(Booking.id == booking_id).first()
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
-        
-    if booking.user_id != current_user.id and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to view this ticket")
-        
-    pdf_bytes = generate_ticket_pdf(booking, booking.user, booking.movie, booking.show)
-    
-    headers = {
-        'Content-Disposition': f'attachment; filename="ticket_{booking_id}.pdf"'
-    }
-    
-    return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+async def download_ticket(
+    booking_id: int, 
+    booking_service: BookingService = Depends(get_booking_service), 
+    current_user = Depends(get_current_user)
+):
+    return await booking_service.download_ticket(booking_id, current_user)

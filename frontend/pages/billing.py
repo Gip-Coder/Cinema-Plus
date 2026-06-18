@@ -9,6 +9,10 @@ async def billing_page(booking_id: int):
         ui.navigate.to('/login')
         return
         
+    if api_client.is_admin():
+        ui.navigate.to('/admin')
+        return
+        
     apply_theme()
     navbar()
     
@@ -43,6 +47,10 @@ async def billing_page(booking_id: int):
 async def user_bookings_page():
     if not api_client.is_authenticated():
         ui.navigate.to('/login')
+        return
+        
+    if api_client.is_admin():
+        ui.navigate.to('/admin')
         return
         
     apply_theme()

@@ -1,75 +1,50 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
-from datetime import timedelta
 from backend.database import get_db
 from backend.models.models import User
 from backend.schemas.schemas import UserCreate, UserResponse, LoginRequest, Token
-from backend.auth.security import get_password_hash, verify_password, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, get_current_user
+from backend.auth.security import get_current_user
+from backend.services.auth_service import AuthService
+from backend.utils.response import standard_response
 
 router = APIRouter()
 
-@router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
-    return current_user
+def get_auth_service(db: Session = Depends(get_db)) -> AuthService:
+    return AuthService(db)
 
-@router.put("/profile", response_model=UserResponse)
-async def update_profile(username: str = None, email: str = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if username:
-        # Check if username exists
-        existing = db.query(User).filter(User.username == username, User.id != current_user.id).first()
-        if existing:
-            raise HTTPException(status_code=400, detail="Username already taken")
-        current_user.username = username
-    if email:
-        current_user.email = email
-    
-    db.commit()
-    db.refresh(current_user)
-    return current_user
+@router.get("/me")
+async def get_me(current_user: User = Depends(get_current_user)):
+    user_data = UserResponse.model_validate(current_user)
+    return standard_response(data=user_data, message="Current user retrieved")
+
+@router.put("/profile")
+async def update_profile(
+    username: str = None, 
+    email: str = None, 
+    auth_service: AuthService = Depends(get_auth_service), 
+    current_user: User = Depends(get_current_user)
+):
+    updated_user = await auth_service.update_profile(current_user, username, email)
+    user_data = UserResponse.model_validate(updated_user)
+    return standard_response(data=user_data, message="Profile updated successfully")
 
 @router.put("/change-password")
-async def change_password(old_password: str, new_password: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if not verify_password(old_password, current_user.hashed_password):
-        raise HTTPException(status_code=400, detail="Incorrect old password")
-    
-    current_user.hashed_password = get_password_hash(new_password)
-    db.commit()
-    return {"message": "Password updated successfully"}
+async def change_password(
+    old_password: str, 
+    new_password: str, 
+    auth_service: AuthService = Depends(get_auth_service), 
+    current_user: User = Depends(get_current_user)
+):
+    await auth_service.change_password(current_user, old_password, new_password)
+    return standard_response(message="Password updated successfully")
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(user: UserCreate, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.username == user.username).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Username already registered")
-    
-    db_email = db.query(User).filter(User.email == user.email).first()
-    if db_email:
-        raise HTTPException(status_code=400, detail="Email already registered")
-        
-    hashed_password = get_password_hash(user.password)
-    new_user = User(
-        username=user.username,
-        email=user.email,
-        hashed_password=hashed_password,
-        role="customer" # default role
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return new_user
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+async def register(user: UserCreate, auth_service: AuthService = Depends(get_auth_service)):
+    new_user = await auth_service.register(user)
+    user_data = UserResponse.model_validate(new_user)
+    return standard_response(data=user_data, message="Registration successful")
 
-@router.post("/login", response_model=Token)
-async def login(login_data: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == login_data.username).first()
-    if not user or not verify_password(login_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-        
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user.username, "role": user.role}, expires_delta=access_token_expires
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
+@router.post("/login")
+async def login(login_data: LoginRequest, auth_service: AuthService = Depends(get_auth_service)):
+    token_dict = await auth_service.login(login_data.username, login_data.password)
+    return standard_response(data=token_dict, message="Login successful")

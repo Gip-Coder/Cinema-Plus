@@ -9,7 +9,7 @@ MAX_FILE_SIZE = 2 * 1024 * 1024 # 2MB
 ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_RESOLUTION = (4000, 4000)
 
-MEDIA_DIR = os.path.join("backend", "uploads", "media")
+MEDIA_DIR = os.path.join("uploads", "media")
 THUMB_DIR = os.path.join(MEDIA_DIR, "thumbnails")
 MEDIUM_DIR = os.path.join(MEDIA_DIR, "medium")
 ORIG_DIR = os.path.join(MEDIA_DIR, "original")
@@ -27,6 +27,15 @@ def validate_and_process_image(file: UploadFile, asset_type: str) -> Dict[str, s
     # 1. Path traversal protection: secure filename
     filename = os.path.basename(file.filename)
     
+    # Extension validation (Task 4)
+    ext = filename.split('.')[-1].lower() if '.' in filename else ''
+    allowed_exts = {"jpg", "jpeg", "png", "webp"}
+    if ext not in allowed_exts:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file extension '.{ext}'. Only jpg, jpeg, png, and webp are allowed."
+        )
+    
     # 2. MIME type validation
     if file.content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
@@ -38,7 +47,7 @@ def validate_and_process_image(file: UploadFile, asset_type: str) -> Dict[str, s
     content = file.file.read()
     file_size = len(content)
     
-    # 3. Size validation
+    # 3. Size validation (2MB limit)
     if file_size > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -62,7 +71,7 @@ def validate_and_process_image(file: UploadFile, asset_type: str) -> Dict[str, s
     file.file.seek(0)
     img = Image.open(file.file)
     
-    # 5. Max resolution check
+    # 5. Max resolution check (4000x4000 limit)
     if img.width > MAX_RESOLUTION[0] or img.height > MAX_RESOLUTION[1]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -70,7 +79,6 @@ def validate_and_process_image(file: UploadFile, asset_type: str) -> Dict[str, s
         )
         
     # 6. Generate UUID filenames
-    ext = filename.split('.')[-1] if '.' in filename else 'jpg'
     unique_id = uuid.uuid4().hex
     unique_filename = f"{unique_id}.{ext}"
     
@@ -93,13 +101,14 @@ def validate_and_process_image(file: UploadFile, asset_type: str) -> Dict[str, s
     img_thumb.thumbnail((150, 150))
     img_thumb.save(thumb_path)
     
-    # Return mapping URLs
+    # Return mapping URLs under unified /uploads canonical route
     return {
         "filename": filename,
         "storage_key": unique_filename,
-        "public_url": f"/static/media/original/{unique_filename}",
-        "medium_url": f"/static/media/medium/{unique_filename}",
-        "thumbnail_url": f"/static/media/thumbnails/{unique_filename}"
+        "public_url": f"/uploads/media/original/{unique_filename}",
+        "medium_url": f"/uploads/media/medium/{unique_filename}",
+        "thumbnail_url": f"/uploads/media/thumbnails/{unique_filename}",
+        "size_bytes": file_size
     }
 
 def delete_processed_image(storage_key: str):
@@ -147,17 +156,30 @@ def validate_external_image_url(url: str) -> Dict[str, str]:
                     )
                     
                 content_type = response.headers.get("Content-Type", "").lower()
-                allowed_mimes = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"}
+                mime_clean = content_type.split(";")[0].strip()
+                allowed_mimes = {"image/jpeg", "image/png", "image/webp"}
                 
-                if not any(mime in content_type for mime in allowed_mimes):
+                if mime_clean not in allowed_mimes:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"URL does not point to a valid image MIME type. Content-Type: {content_type}"
+                        detail=f"Invalid image type. Only JPEG, PNG, and WEBP are allowed. Content-Type: {content_type}"
                     )
                     
+                content_length = response.headers.get("Content-Length")
+                if content_length:
+                    try:
+                        size_bytes = int(content_length)
+                        if size_bytes > 2 * 1024 * 1024:
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="External image size exceeds the 2MB limit."
+                            )
+                    except ValueError:
+                        pass
+                        
                 # Read first chunk of bytes to verify image headers using Pillow
                 content = b""
-                for chunk in response.iter_bytes(max_chunk_size=1024):
+                for chunk in response.iter_bytes(chunk_size=1024):
                     content += chunk
                     if len(content) > 50 * 1024:  # 50KB is more than enough for image headers
                         break
@@ -174,15 +196,30 @@ def validate_external_image_url(url: str) -> Dict[str, str]:
                     )
                     
                 filename = url.split("/")[-1].split("?")[0] or "external_image.jpg"
-                allowed_exts = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg")
-                if not any(filename.lower().endswith(ext) for ext in allowed_exts):
-                    ext = content_type.split("/")[-1] if "/" in content_type else "jpg"
+                ext = filename.split('.')[-1].lower() if '.' in filename else ''
+                allowed_exts = {"jpg", "jpeg", "png", "webp"}
+                if ext not in allowed_exts:
+                    ext = mime_clean.split("/")[-1] if "/" in mime_clean else "jpg"
+                    if ext == "jpeg":
+                        ext = "jpg"
+                    if ext not in allowed_exts:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Invalid image extension from external URL."
+                        )
                     filename = f"{filename}.{ext}"
                     
+                size_bytes = len(content)
+                if content_length:
+                    try:
+                        size_bytes = int(content_length)
+                    except ValueError:
+                        pass
+                        
                 return {
                     "filename": filename,
-                    "mime_type": content_type,
-                    "size_bytes": len(content),
+                    "mime_type": mime_clean,
+                    "size_bytes": size_bytes,
                     "public_url": url,
                 }
             

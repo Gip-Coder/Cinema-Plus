@@ -131,7 +131,8 @@ async def admin_dashboard():
                                     e_upload_tab = ui.tab('Upload Image')
                                     e_url_tab = ui.tab('Use Image URL')
                                     
-                                with ui.tab_panels(e_poster_tabs, value=e_upload_tab).classes('w-full bg-transparent p-0 mb-2') as e_poster_panels:
+                                init_tab = e_url_tab if movie_data.get("poster_source_type") == "external_url" else e_upload_tab
+                                with ui.tab_panels(e_poster_tabs, value=init_tab).classes('w-full bg-transparent p-0 mb-2') as e_poster_panels:
                                     with ui.tab_panel(e_upload_tab):
                                         ui.upload(on_upload=handle_edit_upload, multiple=False, label='Drop poster here').classes('w-full mb-2')
                                         
@@ -196,6 +197,7 @@ async def admin_dashboard():
                                 "release_date": e_rel_date.value,
                                 "running_days": int(e_run_days.value) if e_run_days.value else 30,
                                 "poster_url": final_poster if final_poster else "/uploads/defaults/no-poster.png",
+                                "poster_source_type": ("upload" if e_poster_tabs.value == e_upload_tab else "external_url") if final_poster else "upload",
                                 "description": e_desc.value,
                                 "duration": int(e_duration.value) if e_duration.value else 120,
                                 "rating": float(e_rating.value) if e_rating.value else 8.5
@@ -310,6 +312,7 @@ async def admin_dashboard():
                             "release_date": release_date.value,
                             "running_days": int(running_days.value) if running_days.value else 30,
                             "poster_url": p_url if p_url else "/uploads/defaults/no-poster.png",
+                            "poster_source_type": ("upload" if poster_tabs.value == upload_tab else "external_url") if p_url else "upload",
                             "description": description.value,
                             "duration": int(duration.value) if duration.value else 120,
                             "rating": float(rating.value) if rating.value else 8.5
@@ -339,7 +342,13 @@ async def admin_dashboard():
                                     ui.label(f"{m['genre']} | {m['language']}").classes('text-sm text-gray-400')
                             with ui.row().classes('gap-2'):
                                 ui.button('Edit', color='primary', icon='edit', on_click=lambda movie=m: open_edit_dialog(movie)).classes('px-4 py-2 rounded-lg')
-                                ui.button('Delete', color='negative', icon='delete', on_click=lambda mid=m['id']: api_client.delete_movie(mid)).classes('px-4 py-2 rounded-lg')
+                                async def delete_movie_action(mid=m['id']):
+                                    if await api_client.delete_movie(mid):
+                                        ui.notify("Movie deleted successfully!", type="positive")
+                                        ui.navigate.to('/admin')
+                                    else:
+                                        ui.notify("Failed to delete movie.", type="negative")
+                                ui.button('Delete', color='negative', icon='delete', on_click=delete_movie_action).classes('px-4 py-2 rounded-lg')
 
             # --- TAB 3: SCHEDULE MANAGEMENT ---
             with ui.tab_panel(tab_schedule):
@@ -377,6 +386,121 @@ async def admin_dashboard():
                             ui.navigate.to('/admin')
                     ui.button('Schedule Show', on_click=add_sh).classes('mt-2 w-full')
 
+                ui.label('Existing Scheduled Shows & Seating Grid').classes('text-xl font-bold text-white mt-8 mb-4 border-b border-gray-700 pb-2')
+                shows = await api_client.get_all_shows()
+                
+                for s in shows:
+                    movie_title = m_opts.get(s['movie_id'], f"Movie #{s['movie_id']}")
+                    screen_desc = scr_opts.get(s['screen_id'], f"Screen #{s['screen_id']}")
+                    
+                    try:
+                        stats = await api_client.get_show_stats(s['id'])
+                    except Exception:
+                        stats = {}
+                        
+                    occ_rate = stats.get("occupancy_rate", 0.0)
+                    res_rate = stats.get("reservation_rate", 0.0)
+                    conv_rate = stats.get("conversion_rate", 0.0)
+                    metrics = stats.get("reservation_metrics", {})
+                    
+                    with ui.card().classes('glass-card w-full p-4 mb-4 flex-row justify-between items-center'):
+                        with ui.column().classes('gap-1'):
+                            ui.label(movie_title).classes('text-lg font-bold text-white')
+                            ui.label(f"{screen_desc} | {s['date']} at {s['start_time']} - {s['end_time']}").classes('text-sm text-gray-400')
+                            with ui.row().classes('gap-4 mt-2 text-xs font-semibold'):
+                                ui.label(f"Occupancy: {occ_rate}% ({stats.get('booked_count', 0)} booked)").classes('text-positive')
+                                ui.label(f"Reserved: {res_rate}% ({stats.get('reserved_count', 0)} reserved)").classes('text-amber-500')
+                                ui.label(f"Conversion: {conv_rate}%").classes('text-info')
+                                ui.label(f"Convs: {metrics.get('converted', 0)} | Exps: {metrics.get('expired', 0)}").classes('text-gray-400')
+                        
+                        with ui.row().classes('gap-2'):
+                            async def open_seating_dialog(show_id=s['id'], title=f"{movie_title} - {s['start_time']}"):
+                                try:
+                                    latest_stats = await api_client.get_show_seat_statuses(show_id)
+                                    booked_seats = set(latest_stats.get("booked", []))
+                                    reserved_seats = set(latest_stats.get("reserved", []))
+                                except Exception:
+                                    booked_seats = set()
+                                    reserved_seats = set()
+                                    
+                                try:
+                                    this_show = await api_client.get_show(show_id)
+                                    screen_total_seats = this_show.get("screen", {}).get("total_seats", 220)
+                                except Exception:
+                                    screen_total_seats = 220
+                                    
+                                with ui.dialog() as diag, ui.card().classes('w-full max-w-4xl p-6 bg-[#0a0a0a] border border-zinc-800 text-white items-center'):
+                                    ui.label(f"Live Occupancy Grid: {title}").classes('text-2xl font-bold text-primary mb-2')
+                                    ui.label("SCREEN THIS WAY").classes('text-gray-500 tracking-[0.5em] mb-4 text-xs')
+                                    ui.element('div').classes('w-full h-2 bg-gradient-to-b from-[#E50914] to-transparent rounded-t-full mb-6')
+                                    
+                                    cols = 20 if screen_total_seats > 100 else 10
+                                    import math
+                                    total_rows = math.ceil(screen_total_seats / cols)
+                                    row_letters = [chr(65 + i) for i in range(total_rows)]
+                                    
+                                    with ui.column().classes('gap-3'):
+                                        for row_idx, row in enumerate(row_letters):
+                                            if row_idx < total_rows - 1:
+                                                seat_map = {c: c + 1 for c in range(cols)}
+                                            else:
+                                                k = screen_total_seats - row_idx * cols
+                                                if k == cols:
+                                                    seat_map = {c: c + 1 for c in range(cols)}
+                                                elif k == 1:
+                                                    seat_map = {(cols - 1) // 2: 1}
+                                                else:
+                                                    seat_map = {}
+                                                    for i in range(k):
+                                                        idx = round(i * (cols - 1) / (k - 1))
+                                                        seat_map[idx] = i + 1
+                                                        
+                                            with ui.row().classes('justify-center gap-1'):
+                                                ui.label(row).classes('w-6 text-center font-bold self-center text-xs text-gray-500')
+                                                for col_idx in range(cols):
+                                                    if col_idx in seat_map:
+                                                        seat_num = seat_map[col_idx]
+                                                        seat_name = f"{row}{seat_num}"
+                                                        
+                                                        if seat_name in booked_seats:
+                                                            seat_color = '#333333'
+                                                            tooltip_text = f"Seat {seat_name} (Booked)"
+                                                        elif seat_name in reserved_seats:
+                                                            seat_color = '#d35400'
+                                                            tooltip_text = f"Seat {seat_name} (Reserved)"
+                                                        else:
+                                                            seat_color = '#e50914'
+                                                            tooltip_text = f"Seat {seat_name} (Available)"
+                                                            
+                                                        btn = ui.button('', color=None).classes('min-w-[24px] min-h-[24px] max-w-[24px] max-h-[24px] p-0 rounded-sm').style(f'background: {seat_color}; border: 1px solid rgba(0,0,0,0.5); cursor: default;')
+                                                        btn.tooltip(tooltip_text)
+                                                    else:
+                                                        ui.element('div').classes('w-[24px] h-[24px] m-[1px]').style('opacity: 0;')
+                                                        
+                                    with ui.row().classes('mt-6 gap-6 text-xs justify-center'):
+                                        with ui.row().classes('items-center gap-1'):
+                                            ui.element('div').classes('w-4 h-4 rounded-sm').style('background: #e50914;')
+                                            ui.label('Available')
+                                        with ui.row().classes('items-center gap-1'):
+                                            ui.element('div').classes('w-4 h-4 rounded-sm').style('background: #d35400;')
+                                            ui.label('Reserved')
+                                        with ui.row().classes('items-center gap-1'):
+                                            ui.element('div').classes('w-4 h-4 rounded-sm').style('background: #333333;')
+                                            ui.label('Booked')
+                                            
+                                    ui.button('Close', on_click=diag.close).classes('mt-6 px-6 py-2 rounded-lg bg-zinc-800')
+                                diag.open()
+                                
+                            ui.button('View Layout Grid', icon='grid_on', color='info', on_click=open_seating_dialog).classes('px-4 rounded-lg')
+                            
+                            async def delete_sh_action(show_id=s['id']):
+                                if await api_client.delete_show(show_id):
+                                    ui.notify("Show deleted successfully!", type="positive")
+                                    ui.navigate.to('/admin')
+                                else:
+                                    ui.notify("Failed to delete show.", type="negative")
+                            ui.button('Delete', color='negative', icon='delete', on_click=delete_sh_action).classes('px-4 rounded-lg')
+
             # --- TAB 4: THEATRES MANAGEMENT ---
             with ui.tab_panel(tab_theatres):
                 ui.label('Manage Theatres').classes('text-2xl font-bold text-white mb-4')
@@ -384,11 +508,11 @@ async def admin_dashboard():
                 with ui.card().classes('glass-card w-full p-6 mb-8'):
                     ui.label('Add New Theatre').classes('text-xl font-bold text-white mb-4')
                     with ui.row().classes('w-full gap-4'):
-                        th_name = ui.input('Theatre Name').classes('flex-grow')
-                        th_city = ui.input('City').classes('flex-grow')
-                        th_state = ui.input('State').classes('flex-grow')
-                    th_addr = ui.input('Address').classes('w-full mb-2')
-                    th_desc = ui.textarea('Description').classes('w-full mb-2')
+                        new_th_name = ui.input('Theatre Name').classes('flex-grow')
+                        new_th_city = ui.input('City').classes('flex-grow')
+                        new_th_state = ui.input('State').classes('flex-grow')
+                    new_th_addr = ui.input('Address').classes('w-full mb-2')
+                    new_th_desc = ui.textarea('Description').classes('w-full mb-2')
                     
                     ui.label('Theatre Banner/Poster').classes('text-gray-300 font-semibold mb-1')
                     th_banner_state = {"url": ""}
@@ -437,11 +561,11 @@ async def admin_dashboard():
                     
                     async def save_theatre():
                         payload = {
-                            "name": th_name.value,
-                            "address": th_addr.value,
-                            "city": th_city.value,
-                            "state": th_state.value,
-                            "description": th_desc.value,
+                            "name": new_th_name.value,
+                            "address": new_th_addr.value,
+                            "city": new_th_city.value,
+                            "state": new_th_state.value,
+                            "description": new_th_desc.value,
                             "banner_image_url": th_banner_state["url"],
                             "is_active": True
                         }
@@ -467,7 +591,13 @@ async def admin_dashboard():
                                     ui.notify("Theatre status updated!", type="positive")
                                     ui.navigate.to('/admin')
                             ui.button('Toggle Status', color='warning', on_click=toggle_active).classes('px-4 rounded-lg')
-                            ui.button('Delete', color='negative', on_click=lambda tid=t['id']: api_client.delete_theatre(tid)).classes('px-4 rounded-lg')
+                            async def delete_theatre_action(tid=t['id']):
+                                if await api_client.delete_theatre(tid):
+                                    ui.notify("Theatre deleted successfully!", type="positive")
+                                    ui.navigate.to('/admin')
+                                else:
+                                    ui.notify("Failed to delete theatre.", type="negative")
+                            ui.button('Delete', color='negative', on_click=delete_theatre_action).classes('px-4 rounded-lg')
 
             # --- TAB 5: SCREENS MANAGEMENT ---
             with ui.tab_panel(tab_screens):
@@ -497,43 +627,134 @@ async def admin_dashboard():
                 all_screens = await api_client.get_screens()
                 for s in all_screens:
                     th_name = next((t['name'] for t in theatres_list if t['id'] == s['theatre_id']), "Unknown Theatre")
+                    
+                    try:
+                        layouts = await api_client.get_all_layouts_for_screen(s['id'])
+                    except Exception:
+                        layouts = []
+                    
+                    has_published = any(l.get('is_published') for l in layouts)
+                    if has_published:
+                        status_text = "Published"
+                        badge_color = "positive"
+                    elif layouts:
+                        status_text = "Draft"
+                        badge_color = "warning"
+                    else:
+                        status_text = "No Layout"
+                        badge_color = "negative"
+
                     with ui.card().classes('glass-card w-full p-4 mb-4 flex-row justify-between items-center'):
                         with ui.column():
-                            ui.label(s["name"]).classes('text-xl font-bold text-white')
+                            with ui.row().classes('items-center gap-3'):
+                                ui.label(s["name"]).classes('text-xl font-bold text-white')
+                                ui.badge(status_text, color=badge_color)
                             ui.label(f"Theatre: {th_name} | Type: {s['screen_type']} | Seats: {s['total_seats']}").classes('text-sm text-gray-400')
-                        ui.button('Deactivate' if s["is_active"] else 'Activate', color='warning', on_click=lambda sid=s['id'], active=s['is_active']: api_client.update_screen(sid, {"is_active": not active})).classes('px-4 rounded-lg')
+                        with ui.row().classes('gap-2'):
+                            ui.button('Design Layout', color='primary', on_click=lambda sid=s['id']: ui.navigate.to(f'/admin/layout-designer/{sid}')).classes('px-4 rounded-lg')
+                            
+                            async def toggle_screen_status(sid=s['id'], active=s['is_active']):
+                                if await api_client.update_screen(sid, {"is_active": not active}):
+                                    ui.notify("Screen status updated!", type="positive")
+                                    ui.navigate.to('/admin')
+                                else:
+                                    ui.notify("Failed to update screen status.", type="negative")
+                            
+                            ui.button('Deactivate' if s["is_active"] else 'Activate', color='warning', on_click=toggle_screen_status).classes('px-4 rounded-lg')
 
             # --- TAB 6: PRICING & RULES ---
             with ui.tab_panel(tab_pricing):
                 ui.label('Seat Pricing & Rules Engine').classes('text-2xl font-bold text-white mb-6')
                 
-                # Active rules table
-                ui.label('Base Category Pricings').classes('text-xl font-bold text-white mb-4')
+                # Dropdowns for filtering/selecting base pricing
                 pricings = await api_client.get_pricings()
+                all_screens = await api_client.get_screens()
+                
+                selected_theatre_id = {"value": None}
+                selected_screen_id = {"value": None}
+                selected_seat_cat = {"value": "Normal"}
                 
                 override_state = {"override": False}
                 override_switch = ui.switch('Admin Seat Hierarchy Override', value=False, on_change=lambda e: override_state.update({"override": e.value})).classes('mb-4')
                 
-                for pr in pricings:
-                    th_name = next((t['name'] for t in theatres_list if t['id'] == pr['theatre_id']), "Unknown")
-                    scr_name = "Global" if not pr.get("screen_id") else f"Screen {pr['screen_id']}"
+                pricing_edit_container = ui.column().classes('w-full mt-4')
+                
+                def update_pricing_editor():
+                    pricing_edit_container.clear()
                     
-                    with ui.card().classes('glass-card w-full p-4 mb-4 flex-row justify-between items-center'):
-                        with ui.row().classes('items-center gap-4'):
-                            ui.label(f"{th_name} ({scr_name})").classes('text-md font-bold text-white')
-                            ui.badge(pr["seat_category"], color="primary" if pr["seat_category"]=="Premium" else "info")
-                        with ui.row().classes('items-center gap-2'):
-                            price_input = ui.number('Base Price', value=pr["base_price"], format='%.2f').classes('w-32')
-                            
-                            async def save_pr(pricing_id=pr["id"], inp=price_input):
-                                try:
-                                    success = await api_client.update_pricing(pricing_id, float(inp.value), override=override_state["override"])
-                                    if success:
-                                        ui.notify("Pricing base rate saved!", type="positive")
-                                except Exception as e:
-                                    ui.notify(str(e), type="negative")
+                    tid = selected_theatre_id["value"]
+                    sid = selected_screen_id["value"]
+                    cat = selected_seat_cat["value"]
+                    
+                    if not tid:
+                        with pricing_edit_container:
+                            ui.label("Please select a theatre first.").classes("text-gray-400 italic")
+                        return
+                        
+                    matching_pricing = None
+                    for pr in pricings:
+                        if pr["theatre_id"] == tid and pr["seat_category"] == cat:
+                            if pr.get("screen_id") == sid:
+                                matching_pricing = pr
+                                break
+                                
+                    with pricing_edit_container:
+                        if matching_pricing:
+                            with ui.card().classes('glass-card w-full p-6 flex-row justify-between items-center'):
+                                with ui.column():
+                                    ui.label(f"Configure rate for {cat}").classes('text-lg font-bold text-white')
+                                    th_name = next((t['name'] for t in theatres_list if t['id'] == tid), "Theatre")
+                                    scr_name = "Global" if sid is None else next((s['name'] for s in all_screens if s['id'] == sid), "Screen")
+                                    ui.label(f"{th_name} — {scr_name}").classes('text-sm text-gray-400')
+                                with ui.row().classes('items-center gap-4'):
+                                    price_input = ui.number('Base Price', value=matching_pricing["base_price"], format='%.2f').classes('w-32')
                                     
-                            ui.button('Save', color='primary', on_click=save_pr).classes('px-4 rounded-lg')
+                                    async def save_pr(pricing_id=matching_pricing["id"], inp=price_input):
+                                        try:
+                                            success = await api_client.update_pricing(pricing_id, float(inp.value), override=override_state["override"])
+                                            if success:
+                                                ui.notify("Pricing base rate saved!", type="positive")
+                                                nonlocal pricings
+                                                pricings = await api_client.get_pricings()
+                                        except Exception as e:
+                                            ui.notify(str(e), type="negative")
+                                            
+                                    ui.button('Save', color='primary', on_click=save_pr).classes('px-6 py-2 rounded-lg font-bold')
+                        else:
+                            ui.label("No pricing configuration found for this combination.").classes("text-yellow-400 italic")
+                
+                with ui.row().classes('w-full gap-4 mb-4 items-center'):
+                    th_opts = {t['id']: t['name'] for t in theatres_list}
+                    def on_theatre_select(e):
+                        selected_theatre_id["value"] = e.value
+                        if e.value:
+                            scr_opts = {None: "Global (All Screens)"}
+                            for s in all_screens:
+                                if s["theatre_id"] == e.value:
+                                    scr_opts[s["id"]] = s["name"]
+                            screen_dropdown.options = scr_opts
+                            screen_dropdown.value = None
+                        else:
+                            screen_dropdown.options = {None: "Global (All Screens)"}
+                            screen_dropdown.value = None
+                        selected_screen_id["value"] = None
+                        update_pricing_editor()
+                        
+                    theatre_dropdown = ui.select(th_opts, label='Select Theatre', on_change=on_theatre_select).classes('flex-grow')
+                    
+                    def on_screen_select(e):
+                        selected_screen_id["value"] = e.value
+                        update_pricing_editor()
+                        
+                    screen_dropdown = ui.select({None: "Global (All Screens)"}, label='Select Screen', on_change=on_screen_select).classes('flex-grow')
+                    
+                    def on_cat_select(e):
+                        selected_seat_cat["value"] = e.value
+                        update_pricing_editor()
+                        
+                    cat_dropdown = ui.select(['Normal', 'Executive', 'Premium'], value='Normal', label='Seat Category', on_change=on_cat_select).classes('flex-grow')
+                
+                update_pricing_editor()
 
                 # Rule builder
                 ui.separator().classes('my-8')
@@ -652,4 +873,10 @@ async def admin_dashboard():
                             with ui.column():
                                 ui.label(rev.get('user', {}).get('username', 'User')).classes('font-bold text-primary')
                                 ui.label(rev['comment']).classes('text-gray-300 mt-2')
-                            ui.button('Delete', color='negative', icon='delete', on_click=lambda rid=rev['id']: api_client.delete_review(rid)).classes('px-6 rounded-lg')
+                            async def delete_review_action(rid=rev['id']):
+                                if await api_client.delete_review(rid):
+                                    ui.notify("Review deleted successfully!", type="positive")
+                                    ui.navigate.to('/admin')
+                                else:
+                                    ui.notify("Failed to delete review.", type="negative")
+                            ui.button('Delete', color='negative', icon='delete', on_click=delete_review_action).classes('px-6 rounded-lg')
