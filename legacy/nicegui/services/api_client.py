@@ -372,7 +372,14 @@ class APIClient:
         payload = {"total_seats": total_seats, "template": template}
         if custom_cols is not None:
             payload["custom_cols"] = custom_cols
-        response = await self.client.post("/api/layouts/generate", json=payload)
+        response = await self.client.post("/api/layouts/preview", json=payload)
+        if response.status_code == 200:
+            return response.json()
+        return None
+
+    async def validate_layout(self, seats: List[Dict], rows: int, cols: int) -> Optional[Dict]:
+        payload = {"seats": seats, "rows": rows, "cols": cols}
+        response = await self.client.post("/api/layouts/validate", json=payload)
         if response.status_code == 200:
             return response.json()
         return None
@@ -439,5 +446,21 @@ class APIClient:
     async def delete_layout(self, layout_id: int) -> bool:
         response = await self.client.delete(f"/api/layouts/{layout_id}")
         return response.status_code == 200
+
+    async def create_layout_version(self, layout_id: int, layout_name: Optional[str] = None) -> Optional[Dict]:
+        payload = {}
+        if layout_name:
+            payload["layout_name"] = layout_name
+        response = await self.client.post(f"/api/layouts/{layout_id}/version", json=payload)
+        if response.status_code == 201:
+            return response.json()
+        return None
+
+    async def rollback_layout_version(self, screen_id: int, version: int) -> Optional[Dict]:
+        payload = {"version": version}
+        response = await self.client.post(f"/api/layouts/screen/{screen_id}/rollback", json=payload)
+        if response.status_code == 200:
+            return response.json()
+        return None
 
 api_client = APIClient()

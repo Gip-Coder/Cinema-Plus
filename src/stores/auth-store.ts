@@ -35,6 +35,10 @@ export const useAuthStore = create<AuthState>()(
       login: (token, user = null) => {
         const expired = isTokenExpired(token.access_token);
 
+        if (!expired && typeof window !== "undefined") {
+          document.cookie = `access_token=${token.access_token}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`;
+        }
+
         set({
           accessToken: expired ? null : token.access_token,
           isAuthenticated: !expired,
@@ -44,6 +48,9 @@ export const useAuthStore = create<AuthState>()(
         });
       },
       logout: () => {
+        if (typeof window !== "undefined") {
+          document.cookie = "access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
+        }
         set({
           accessToken: null,
           isAuthenticated: false,

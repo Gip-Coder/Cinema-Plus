@@ -24,6 +24,30 @@ class SeatDefinitionInput(BaseModel):
     is_active: bool = True
 
 
+class LayoutValidateRequest(BaseModel):
+    """Request to validate a layout without persisting."""
+    seats: List[SeatDefinitionInput]
+    rows: int = Field(..., ge=1)
+    cols: int = Field(..., ge=1)
+
+
+class LayoutValidateResponse(BaseModel):
+    """Structured validation result for a layout."""
+    is_valid: bool
+    errors: List[str] = []
+    stats: Dict[str, int] = {}
+
+
+class LayoutVersionRequest(BaseModel):
+    """Optional metadata when creating a new layout version."""
+    layout_name: Optional[str] = Field(default=None, max_length=100)
+
+
+class LayoutRollbackRequest(BaseModel):
+    """Rollback to a specific version number for a screen."""
+    version: int = Field(..., ge=1)
+
+
 class LayoutSaveRequest(BaseModel):
     """Request to save a layout to the database."""
     screen_id: int
@@ -69,6 +93,8 @@ class TheatreLayoutResponse(BaseModel):
     total_seats: int
     rows: int
     cols: int
+    status: str
+    version: int
     is_published: bool
     seats: List[SeatDefinitionResponse] = []
     created_at: datetime

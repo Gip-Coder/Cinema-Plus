@@ -281,3 +281,22 @@ async def delete_booking(
 ):
     await admin_service.delete_booking(booking_id)
     return standard_response(message="Booking deleted successfully")
+
+@router.get("/audit")
+async def get_audit_logs(
+    skip: int = 0,
+    limit: int = 100,
+    admin_service: AdminService = Depends(get_admin_service),
+    current_admin=Depends(require_roles(["super_admin", "admin"]))
+):
+    logs = await admin_service.get_audit_logs(skip, limit)
+    logs_data = [AuditLogResponse.model_validate(l) for l in logs]
+    return standard_response(data=logs_data, message="Audit logs retrieved successfully")
+
+@router.get("/health")
+async def get_system_health(
+    admin_service: AdminService = Depends(get_admin_service),
+    current_admin=Depends(require_roles(["super_admin", "admin"]))
+):
+    health = await admin_service.get_system_health()
+    return standard_response(data=health, message="System health retrieved successfully")

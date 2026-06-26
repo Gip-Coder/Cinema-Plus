@@ -27,7 +27,19 @@ class LayoutRepository:
         """Get all layouts (drafts + published) for a screen."""
         return self.db.query(TheatreLayout).filter(
             TheatreLayout.screen_id == screen_id
-        ).order_by(TheatreLayout.updated_at.desc()).all()
+        ).order_by(TheatreLayout.version.desc(), TheatreLayout.updated_at.desc()).all()
+
+    def get_layout_by_screen_and_version(self, screen_id: int, version: int) -> Optional[TheatreLayout]:
+        return self.db.query(TheatreLayout).filter(
+            TheatreLayout.screen_id == screen_id,
+            TheatreLayout.version == version,
+        ).first()
+
+    def get_max_version_for_screen(self, screen_id: int) -> int:
+        result = self.db.query(TheatreLayout.version).filter(
+            TheatreLayout.screen_id == screen_id
+        ).order_by(TheatreLayout.version.desc()).first()
+        return result[0] if result else 0
 
     def create_layout(self, layout: TheatreLayout) -> TheatreLayout:
         self.db.add(layout)
@@ -50,7 +62,7 @@ class LayoutRepository:
         self.db.query(TheatreLayout).filter(
             TheatreLayout.screen_id == screen_id,
             TheatreLayout.is_published == True,
-        ).update({"is_published": False}, synchronize_session=False)
+        ).update({"is_published": False, "status": "draft"}, synchronize_session=False)
         self.db.commit()
 
     # ─── SeatDefinition CRUD ──────────────────────────────────────────

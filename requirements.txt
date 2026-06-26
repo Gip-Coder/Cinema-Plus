@@ -1,24 +1,26 @@
-# Backend
+# ─── Backend Core ────────────────────────────────────────
 fastapi
 uvicorn[standard]
 sqlalchemy
 pymysql
+python-dotenv
+python-multipart
+psutil
+
+
+# ─── Authentication ──────────────────────────────────────
 passlib[bcrypt]
 python-jose[cryptography]
-python-multipart
-python-dotenv
+
+# ─── Ticket Generation ───────────────────────────────────
 reportlab
 qrcode
 Pillow
 
-# Frontend
-nicegui
-httpx
-
-# Wait and Async
+# ─── Async & Email ───────────────────────────────────────
 aiofiles
 fastapi-mail
-
-# Performance and Database migrations
-alembic
 email-validator
+
+# ─── Database Migrations ────────────────────────────────
+alembic

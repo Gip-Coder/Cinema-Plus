@@ -42,6 +42,8 @@ export const apiRoutes = {
     cancelBooking: (bookingId: number) => `/api/admin/bookings/${bookingId}/cancel`,
     booking: (bookingId: number) => `/api/admin/bookings/${bookingId}`,
     showStats: (showId: number) => `/api/admin/shows/${showId}/stats`,
+    audit: "/api/admin/audit",
+    health: "/api/admin/health",
   },
   schedule: {
     theatres: "/api/schedule/theatres",
@@ -57,6 +59,7 @@ export const apiRoutes = {
     byMovie: (movieId: number) => `/api/reviews/movie/${movieId}`,
     all: "/api/reviews/all",
     delete: (reviewId: number) => `/api/reviews/${reviewId}`,
+    update: (reviewId: number) => `/api/reviews/${reviewId}`,
   },
   reservations: {
     create: "/api/reservations",
@@ -75,5 +78,7 @@ export const apiRoutes = {
     seats: (layoutId: number) => `/api/layouts/${layoutId}/seats`,
     stats: (layoutId: number) => `/api/layouts/${layoutId}/stats`,
     templates: "/api/layouts/templates/list",
+    version: (layoutId: number) => `/api/layouts/${layoutId}/version`,
+    rollback: (screenId: number) => `/api/layouts/screen/${screenId}/rollback`,
   },
 } as const;

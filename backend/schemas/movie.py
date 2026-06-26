@@ -14,6 +14,7 @@ class MovieBase(BaseModel):
     description: Optional[str] = None
     duration: int = Field(..., gt=0)
     rating: Optional[float] = Field(None, ge=0.0, le=10.0)
+    status: str = Field("Now Showing", description="Status: Now Showing, Coming Soon, or Archived")
 
     @field_validator("poster_url")
     @classmethod
@@ -44,6 +45,7 @@ class MovieUpdate(BaseModel):
     description: Optional[str] = None
     duration: Optional[int] = Field(None, gt=0)
     rating: Optional[float] = Field(None, ge=0.0, le=10.0)
+    status: Optional[str] = None
 
     @field_validator("poster_url")
     @classmethod

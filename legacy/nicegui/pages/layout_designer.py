@@ -51,8 +51,11 @@ async def layout_designer_page(screen_id: int):
         "total_seats": current_layout['total_seats'] if current_layout else screen['total_seats'],
         "rows": current_layout['rows'] if current_layout else 0,
         "cols": current_layout['cols'] if current_layout else 0,
+        "version": current_layout.get('version', 1) if current_layout else 1,
+        "status": current_layout.get('status', 'draft') if current_layout else 'draft',
         "selected_seat_pos": None, # (x, y)
         "seats_map": {}, # (x, y) -> seat dict
+        "move_mode": False,
     }
 
     if current_layout:
@@ -172,9 +175,61 @@ async def layout_designer_page(screen_id: int):
                             btn = ui.button(btn_label, icon=icon_str, color=None).classes('min-w-[32px] min-h-[32px] max-w-[32px] max-h-[32px] p-0 rounded-sm text-[9px] font-bold text-white').style(f'{bg_style} {border_style} cursor-pointer')
                             btn.on('click', lambda p=pos: select_seat(p))
                         else:
-                            # Empty slot for seat placement
+                            # Empty slot — move selected seat or add new seat
                             btn = ui.button('', icon='add', color=None).classes('min-w-[32px] min-h-[32px] max-w-[32px] max-h-[32px] p-0 rounded-sm opacity-10 hover:opacity-50 transition-opacity').style('border: 1px dashed #555; background: transparent; color: #777;')
-                            btn.on('click', lambda p=pos: add_seat_at(p))
+                            btn.on('click', lambda p=pos: handle_empty_cell_click(p))
+
+    def handle_empty_cell_click(pos):
+        if state["move_mode"] and state["selected_seat_pos"] and state["selected_seat_pos"] != pos:
+            move_seat_to(pos)
+        elif state["selected_seat_pos"] and state["selected_seat_pos"] in state["seats_map"]:
+            move_seat_to(pos)
+        else:
+            add_seat_at(pos)
+
+    def move_seat_to(dest_pos):
+        src_pos = state["selected_seat_pos"]
+        if not src_pos or src_pos not in state["seats_map"]:
+            return
+        if dest_pos in state["seats_map"] and state["seats_map"][dest_pos].get('is_active', True):
+            ui.notify("Destination already has a seat!", type="warning")
+            return
+
+        push_history()
+        seat = state["seats_map"].pop(src_pos)
+        x, y = dest_pos
+        seat['position_x'] = x
+        seat['position_y'] = y
+        state["seats_map"][dest_pos] = seat
+        state["selected_seat_pos"] = dest_pos
+        state["move_mode"] = False
+        ui.notify(f"Moved seat {seat['seat_code']} to ({x}, {y})", type="positive")
+        rebuild_grid()
+        update_sidebar()
+
+    def insert_aisle_column(at_x: int):
+        """Insert an aisle gap at column at_x, shifting seats right."""
+        if at_x < 0 or at_x > state["cols"]:
+            ui.notify("Invalid aisle column position", type="warning")
+            return
+
+        push_history()
+        new_map = {}
+        for pos, seat in state["seats_map"].items():
+            x, y = pos
+            if not seat.get('is_active', True):
+                new_map[pos] = seat
+                continue
+            new_x = x + 1 if x >= at_x else x
+            seat['position_x'] = new_x
+            new_map[(new_x, y)] = seat
+
+        state["seats_map"] = new_map
+        state["cols"] += 1
+        state["selected_seat_pos"] = None
+        ui.notify(f"Aisle inserted at column {at_x}", type="positive")
+        rebuild_grid()
+        update_sidebar()
 
     def select_seat(pos):
         state["selected_seat_pos"] = pos
@@ -286,9 +341,63 @@ async def layout_designer_page(screen_id: int):
 
                 with ui.row().classes('w-full gap-2 justify-between mt-2'):
                     ui.button('Apply', color='primary', on_click=apply_seat_changes).classes('flex-grow')
+                    ui.button('Move', color='secondary', on_click=lambda: toggle_move_mode()).classes('px-4')
                     ui.button('Remove', color='negative', on_click=delete_selected_seat).classes('px-4')
+
+                def toggle_move_mode():
+                    state["move_mode"] = not state["move_mode"]
+                    if state["move_mode"]:
+                        ui.notify("Move mode: click an empty cell to relocate this seat", type="info")
+                    else:
+                        ui.notify("Move mode disabled", type="info")
             else:
                 ui.label('Select a seat or empty cell in the grid to edit properties or add seats.').classes('text-sm text-gray-500 text-center italic mt-4')
+
+            ui.separator().classes('my-2')
+            ui.label('Grid Tools').classes('text-md font-bold text-white')
+            aisle_col_input = ui.number('Aisle Column', value=state["cols"] // 2, min=0, max=max(state["cols"], 1), format='%d').classes('w-full')
+            ui.button('Insert Aisle', icon='view_week', color='zinc-700', on_click=lambda: insert_aisle_column(int(aisle_col_input.value))).classes('w-full')
+
+            ui.separator().classes('my-2')
+            ui.label(f'Version: v{state["version"]} ({state["status"]})').classes('text-sm text-gray-400')
+            rollback_version_input = ui.number(
+                'Rollback to version',
+                value=max(1, state["version"] - 1),
+                min=1,
+                format='%d',
+            ).classes('w-full')
+
+            async def new_version_action():
+                if not state["layout_id"]:
+                    ui.notify("Save a draft first before creating a new version", type="warning")
+                    return
+                try:
+                    res = await api_client.create_layout_version(state["layout_id"])
+                    data = (res or {}).get('data', res)
+                    if data and data.get('id'):
+                        state["layout_id"] = data['id']
+                        state["version"] = data.get('version', state["version"] + 1)
+                        state["status"] = data.get('status', 'draft')
+                        ui.notify(f"Created version v{state['version']}", type="positive")
+                        update_sidebar()
+                    else:
+                        ui.notify("Failed to create new version", type="negative")
+                except Exception as e:
+                    ui.notify(f"Error creating version: {e}", type="negative")
+
+            async def rollback_action():
+                target = int(rollback_version_input.value)
+                try:
+                    res = await api_client.rollback_layout_version(screen_id, target)
+                    if res:
+                        ui.notify(f"Rolled back to v{target}", type="positive")
+                        ui.timer(1.0, lambda: ui.navigate.to(f'/admin/layout-designer/{screen_id}'), once=True)
+                except Exception as e:
+                    ui.notify(f"Rollback failed: {e}", type="negative")
+
+            with ui.row().classes('w-full gap-2'):
+                ui.button('New Version', icon='content_copy', color='zinc-700', on_click=new_version_action).classes('flex-grow')
+                ui.button('Rollback', icon='history', color='warning', on_click=rollback_action).classes('flex-grow')
 
     # ─── Undo / Redo Actions ──────────────────────────────────────────
     def undo_action():

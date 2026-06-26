@@ -1,12 +1,80 @@
+# ─── Python ──────────────────────────────────────────────
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
 .venv/
+venv/
+ENV/
 *.db
+*.sqlite3
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.pytype/
+
+# ─── Node.js ─────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ─── Next.js ─────────────────────────────────────────────
+.next/
+out/
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# ─── Environment Variables ───────────────────────────────
 .env
 .env.local
-.next/
-node_modules/
-out/
-scratch/
-backend/uploads/posters/*.jpg
-backend/uploads/posters/*.png
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ─── IDE & Editors ───────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ─── OS Generated ───────────────────────────────────────
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ─── Uploads & User Content ─────────────────────────────
+uploads/posters/*
+uploads/banners/*
+uploads/media/*
+!uploads/defaults/
+
+# ─── Logs & Cache ───────────────────────────────────────
+*.log
+logs/
+cache/
+.cache/
+tmp/
+
+# ─── Coverage Reports ───────────────────────────────────
+coverage/
+lcov-report/
+*.lcov
+
+# ─── Misc ────────────────────────────────────────────────
+*.bak
+*.tmp
+*.temp

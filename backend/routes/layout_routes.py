@@ -7,6 +7,7 @@ from backend.services.layout_service import LayoutService
 from backend.utils.response import standard_response
 from backend.schemas.layout import (
     LayoutGenerateRequest, LayoutSaveRequest, LayoutBulkSeatUpdate,
+    LayoutValidateRequest, LayoutVersionRequest, LayoutRollbackRequest,
     TheatreLayoutResponse, LayoutPreviewResponse, LayoutStatsResponse,
     LayoutTemplateResponse,
 )
@@ -27,8 +28,8 @@ def get_client_ip(request: Request) -> str:
 
 # ─── Preview (generate without saving) ──────────────────────────────
 
-@router.post("/generate", response_model=None)
-async def generate_layout_preview(
+@router.post("/preview", response_model=None)
+async def preview_layout(
     payload: LayoutGenerateRequest,
     layout_service: LayoutService = Depends(get_layout_service),
     current_admin=Depends(get_current_admin_user),
@@ -40,6 +41,35 @@ async def generate_layout_preview(
         custom_cols=payload.custom_cols,
     )
     return standard_response(data=preview, message="Layout preview generated")
+
+
+@router.post("/generate", response_model=None)
+async def generate_layout_preview(
+    payload: LayoutGenerateRequest,
+    layout_service: LayoutService = Depends(get_layout_service),
+    current_admin=Depends(get_current_admin_user),
+):
+    """Alias for /preview — generate a layout preview without persisting."""
+    preview = await layout_service.generate_preview(
+        total_seats=payload.total_seats,
+        template=payload.template,
+        custom_cols=payload.custom_cols,
+    )
+    return standard_response(data=preview, message="Layout preview generated")
+
+
+# ─── Validate (no persistence) ───────────────────────────────────────
+
+@router.post("/validate", response_model=None)
+async def validate_layout_endpoint(
+    payload: LayoutValidateRequest,
+    layout_service: LayoutService = Depends(get_layout_service),
+    current_admin=Depends(get_current_admin_user),
+):
+    """Validate a layout for duplicates, overlaps, and invalid categories."""
+    result = await layout_service.validate_layout_preview(payload.seats)
+    message = "Layout is valid" if result["is_valid"] else "Layout validation failed"
+    return standard_response(data=result, message=message)
 
 
 # ─── Save ────────────────────────────────────────────────────────────
@@ -114,6 +144,45 @@ async def publish_layout(
     layout = await layout_service.publish_layout(layout_id, current_admin, ip)
     layout_res = TheatreLayoutResponse.model_validate(layout)
     return standard_response(data=layout_res, message="Layout published successfully")
+
+
+# ─── Version management ──────────────────────────────────────────────
+
+@router.post("/{layout_id}/version", status_code=status.HTTP_201_CREATED, response_model=None)
+async def create_layout_version(
+    layout_id: int,
+    request: Request,
+    payload: LayoutVersionRequest = LayoutVersionRequest(),
+    layout_service: LayoutService = Depends(get_layout_service),
+    current_admin=Depends(get_current_admin_user),
+):
+    """Create a new draft version cloned from an existing layout."""
+    ip = get_client_ip(request)
+    layout = await layout_service.create_new_version(
+        layout_id, payload.layout_name, current_admin, ip
+    )
+    layout_res = TheatreLayoutResponse.model_validate(layout)
+    return standard_response(data=layout_res, message="New layout version created")
+
+
+@router.post("/screen/{screen_id}/rollback", response_model=None)
+async def rollback_layout_version(
+    screen_id: int,
+    payload: LayoutRollbackRequest,
+    request: Request,
+    layout_service: LayoutService = Depends(get_layout_service),
+    current_admin=Depends(get_current_admin_user),
+):
+    """Rollback to and publish a previous layout version for a screen."""
+    ip = get_client_ip(request)
+    layout = await layout_service.rollback_version(
+        screen_id, payload.version, current_admin, ip
+    )
+    layout_res = TheatreLayoutResponse.model_validate(layout)
+    return standard_response(
+        data=layout_res,
+        message=f"Rolled back to layout version {payload.version}",
+    )
 
 
 # ─── Bulk seat update ────────────────────────────────────────────────

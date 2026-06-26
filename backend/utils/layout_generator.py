@@ -429,14 +429,15 @@ def compute_layout_stats(seats: List[SeatData]) -> Dict[str, int]:
 
 def validate_layout(seats: List[Dict[str, Any]]) -> Tuple[bool, List[str]]:
     """Validate a layout for consistency.
-    
+
     Checks:
+    - No missing seat codes
     - No duplicate seat codes
     - No overlapping positions
     - Valid categories
     - Valid seat types
     - Seat codes follow pattern (letter + number)
-    
+
     Returns:
         (is_valid, list_of_error_messages)
     """
@@ -448,32 +449,66 @@ def validate_layout(seats: List[Dict[str, Any]]) -> Tuple[bool, List[str]]:
     seen_positions = set()
 
     for i, seat in enumerate(seats):
-        code = seat.get("seat_code", "")
+        code = (seat.get("seat_code") or "").strip()
         pos = (seat.get("position_x"), seat.get("position_y"))
         category = seat.get("category", "")
         seat_type = seat.get("seat_type", "")
 
-        # Duplicate code check
-        if code in seen_codes:
-            errors.append(f"Duplicate seat code: {code}")
-        seen_codes.add(code)
-
-        # Overlapping position check (only for active seats)
         if seat.get("is_active", True):
+            if not code:
+                errors.append(f"Missing seat code at position ({pos[0]}, {pos[1]})")
+                continue
+
+            # Duplicate code check
+            if code in seen_codes:
+                errors.append(f"Duplicate seat code: {code}")
+            seen_codes.add(code)
+
+            # Overlapping position check
             if pos in seen_positions:
                 errors.append(f"Overlapping position at ({pos[0]}, {pos[1]}) for seat {code}")
             seen_positions.add(pos)
 
-        # Category validation
-        if category not in valid_categories:
-            errors.append(f"Invalid category '{category}' for seat {code}. Must be one of: {valid_categories}")
+        if code:
+            # Category validation
+            if category not in valid_categories:
+                errors.append(
+                    f"Invalid category '{category}' for seat {code}. "
+                    f"Must be one of: {', '.join(sorted(valid_categories))}"
+                )
 
-        # Type validation
-        if seat_type not in valid_types:
-            errors.append(f"Invalid seat type '{seat_type}' for seat {code}. Must be one of: {valid_types}")
+            # Type validation
+            if seat_type not in valid_types:
+                errors.append(
+                    f"Invalid seat type '{seat_type}' for seat {code}. "
+                    f"Must be one of: {', '.join(sorted(valid_types))}"
+                )
 
-        # Seat code format: at least one letter followed by at least one digit
-        if code and (not code[0].isalpha() or not any(c.isdigit() for c in code)):
-            errors.append(f"Invalid seat code format: '{code}'. Expected format like 'A1', 'B12'")
+            # Seat code format: at least one letter followed by at least one digit
+            if not code[0].isalpha() or not any(c.isdigit() for c in code):
+                errors.append(f"Invalid seat code format: '{code}'. Expected format like 'A1', 'B12'")
 
     return (len(errors) == 0, errors)
+
+
+def validate_layout_structured(seats: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Return structured validation response with stats."""
+    is_valid, errors = validate_layout(seats)
+    seat_objs = [
+        SeatData(
+            seat_code=s.get("seat_code", ""),
+            row_label=s.get("row_label", ""),
+            seat_number=s.get("seat_number", 0),
+            seat_type=s.get("seat_type", "standard"),
+            category=s.get("category", "Normal"),
+            position_x=s.get("position_x", 0),
+            position_y=s.get("position_y", 0),
+            is_active=s.get("is_active", True),
+        )
+        for s in seats
+    ]
+    return {
+        "is_valid": is_valid,
+        "errors": errors,
+        "stats": compute_layout_stats(seat_objs),
+    }

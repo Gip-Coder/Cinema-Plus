@@ -7,7 +7,8 @@ from backend.models.theatre import Screen
 from backend.models.models import User
 from backend.schemas.layout import LayoutSaveRequest, LayoutBulkSeatUpdate, SeatDefinitionInput
 from backend.utils.layout_generator import (
-    generate_layout, validate_layout, compute_layout_stats, get_all_templates, SeatData
+    generate_layout, validate_layout, validate_layout_structured,
+    compute_layout_stats, get_all_templates, SeatData
 )
 from backend.utils.cache import cache
 from backend.utils.audit_logger import log_action
@@ -33,6 +34,34 @@ class LayoutService:
         )
         return layout_data.to_dict()
 
+    async def validate_layout_preview(self, seats: List[SeatDefinitionInput]) -> Dict[str, Any]:
+        """Validate a layout and return structured errors/stats without persisting."""
+        seats_dicts = [s.model_dump() for s in seats]
+        return validate_layout_structured(seats_dicts)
+
+    def _validate_for_publish(self, seats: List[SeatDefinition]) -> None:
+        """Raise BadRequestException if layout cannot be published."""
+        seats_dicts = []
+        for s in seats:
+            if not s.is_active:
+                continue
+            seats_dicts.append({
+                "seat_code": s.seat_code,
+                "row_label": s.row_label,
+                "seat_number": s.seat_number,
+                "seat_type": s.seat_type,
+                "category": s.category,
+                "position_x": s.position_x,
+                "position_y": s.position_y,
+                "is_active": s.is_active,
+            })
+        if not seats_dicts:
+            raise BadRequestException("Cannot publish an empty layout")
+
+        is_valid, errors = validate_layout(seats_dicts)
+        if not is_valid:
+            raise BadRequestException(f"Layout validation failed: {'; '.join(errors)}")
+
     # ─── Persistence ─────────────────────────────────────────────────
 
     async def save_layout(
@@ -54,6 +83,7 @@ class LayoutService:
             raise BadRequestException(f"Layout validation failed: {'; '.join(errors)}")
 
         active_seats = [s for s in request.seats if s.is_active]
+        next_version = self.layout_repo.get_max_version_for_screen(request.screen_id) + 1
 
         # Create layout record
         layout = TheatreLayout(
@@ -64,6 +94,8 @@ class LayoutService:
             total_seats=len(active_seats),
             rows=request.rows,
             cols=request.cols,
+            status="draft",
+            version=next_version,
             is_published=False,
         )
         layout = self.layout_repo.create_layout(layout)
@@ -103,10 +135,13 @@ class LayoutService:
         if not layout:
             raise NotFoundException("Layout not found")
 
+        self._validate_for_publish(layout.seats)
+
         # Unpublish all other layouts for this screen
         self.layout_repo.unpublish_all_for_screen(layout.screen_id)
 
         # Publish this one
+        layout.status = "published"
         layout.is_published = True
         layout = self.layout_repo.save_layout(layout)
 
@@ -252,3 +287,68 @@ class LayoutService:
 
     async def get_templates(self) -> List[Dict[str, Any]]:
         return get_all_templates()
+
+    async def create_new_version(
+        self,
+        layout_id: int,
+        layout_name: Optional[str],
+        current_user: User,
+        client_ip: str,
+    ) -> TheatreLayout:
+        """Clone an existing layout as a new draft version."""
+        source = self.layout_repo.get_layout_by_id(layout_id)
+        if not source:
+            raise NotFoundException("Layout not found")
+
+        next_version = self.layout_repo.get_max_version_for_screen(source.screen_id) + 1
+        new_layout = TheatreLayout(
+            theatre_id=source.theatre_id,
+            screen_id=source.screen_id,
+            layout_name=layout_name or f"{source.layout_name} v{next_version}",
+            layout_type=source.layout_type,
+            total_seats=source.total_seats,
+            rows=source.rows,
+            cols=source.cols,
+            status="draft",
+            version=next_version,
+            is_published=False,
+        )
+        new_layout = self.layout_repo.create_layout(new_layout)
+
+        seat_models = []
+        for s in source.seats:
+            seat_models.append(SeatDefinition(
+                layout_id=new_layout.id,
+                seat_code=s.seat_code,
+                row_label=s.row_label,
+                seat_number=s.seat_number,
+                seat_type=s.seat_type,
+                category=s.category,
+                position_x=s.position_x,
+                position_y=s.position_y,
+                is_active=s.is_active,
+            ))
+        self.layout_repo.bulk_create_seats(seat_models)
+        self.db.refresh(new_layout)
+
+        log_action(
+            self.db, current_user.id, "layout", new_layout.id, "create_version",
+            new_value={"source_layout_id": layout_id, "version": next_version},
+            ip_address=client_ip,
+        )
+        cache.invalidate("layout:*")
+        return new_layout
+
+    async def rollback_version(
+        self,
+        screen_id: int,
+        version: int,
+        current_user: User,
+        client_ip: str,
+    ) -> TheatreLayout:
+        """Publish a previous layout version for a screen."""
+        target = self.layout_repo.get_layout_by_screen_and_version(screen_id, version)
+        if not target:
+            raise NotFoundException(f"Layout version {version} not found for screen {screen_id}")
+
+        return await self.publish_layout(target.id, current_user, client_ip)

@@ -42,10 +42,22 @@ async def get_movie_reviews(
 async def delete_review(
     review_id: int, 
     review_service: ReviewService = Depends(get_review_service), 
-    current_admin = Depends(get_current_admin_user)
+    current_user = Depends(get_current_user)
 ):
-    await review_service.delete_review(review_id)
+    await review_service.delete_review(review_id, current_user)
     return standard_response(message="Review deleted successfully")
+
+@router.put("/{review_id}")
+async def update_review(
+    review_id: int,
+    review: ReviewCreate,
+    review_service: ReviewService = Depends(get_review_service),
+    current_user = Depends(get_current_user)
+):
+    db_review = await review_service.update_review(review_id, review, current_user)
+    review_data = ReviewResponse.model_validate(db_review)
+    return standard_response(data=review_data, message="Review updated successfully")
+
 
 @router.get("/all")
 async def get_all_reviews(

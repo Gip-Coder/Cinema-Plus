@@ -21,4 +21,7 @@ export const reviewsApi = {
   remove(token: string, reviewId: number) {
     return apiClient.delete<null>(apiRoutes.reviews.delete(reviewId), { token });
   },
+  update(token: string, reviewId: number, payload: ReviewCreate) {
+    return apiClient.put<Review, ReviewCreate>(apiRoutes.reviews.update(reviewId), payload, { token });
+  },
 };

@@ -17,6 +17,7 @@ class Movie(Base):
     poster_source_type = Column(String(50), default="upload", nullable=False)
     poster_uploaded_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=True)
     is_deleted = Column(Boolean, default=False, nullable=False)
+    status = Column(String(50), default="Now Showing", nullable=False)
     deleted_at = Column(DateTime, nullable=True)
     description = Column(Text, nullable=True)
     duration = Column(Integer) # in minutes
