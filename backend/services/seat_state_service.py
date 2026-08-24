@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict
 from backend.models.booking import BookedSeat, Booking
 from backend.models.reservation import SeatReservation, ReservationGroup
@@ -27,7 +27,7 @@ class SeatStateService:
         booked_seats = [row[0] for row in booked_query]
 
         # Get reserved seats (active unexpired reservations)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         reserved_query = (
             self.db.query(SeatReservation.seat_id)
             .join(ReservationGroup, SeatReservation.reservation_group_id == ReservationGroup.id)

@@ -13,18 +13,20 @@ export const authApi = {
     return apiClient.get<User>(apiRoutes.auth.me, { token });
   },
   updateProfile(token: string, payload: Partial<Pick<User, "email" | "username">>) {
-    return apiClient.put<User>(apiRoutes.auth.profile, undefined, {
-      query: payload,
-      token,
-    });
+    return apiClient.put<User, Partial<Pick<User, "email" | "username">>>(
+      apiRoutes.auth.profile,
+      payload,
+      { token },
+    );
   },
   changePassword(token: string, oldPassword: string, newPassword: string) {
-    return apiClient.put<null>(apiRoutes.auth.changePassword, undefined, {
-      query: {
+    return apiClient.put<null, { old_password: string; new_password: string }>(
+      apiRoutes.auth.changePassword,
+      {
         old_password: oldPassword,
         new_password: newPassword,
       },
-      token,
-    });
+      { token },
+    );
   },
 };

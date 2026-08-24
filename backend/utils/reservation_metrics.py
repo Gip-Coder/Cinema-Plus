@@ -1,13 +1,13 @@
 from sqlalchemy.orm import Session
 from backend.models.reservation import ReservationGroup
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import func
 
 def get_reservation_metrics(db: Session) -> dict:
     """
     Computes real-time reservation metrics and conversion rates.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     # Active Reservations (unexpired and not converted/cancelled)
     active_count = db.query(func.count(ReservationGroup.id)).filter(

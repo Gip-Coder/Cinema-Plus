@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-06-27T12:11:00Z",
+  "mutation_score_percent": 0.0,
+  "mutants_killed": 0,
+  "mutants_survived": 3,
+  "mutants": [
+    {
+      "mutant_id": 1,
+      "description": "Mutate cache expiry comparison: change '<' to '>'",
+      "status": "SURVIVED",
+      "duration_sec": 3.823687800000698,
+      "stdout_snippet": ""
+    },
+    {
+      "mutant_id": 2,
+      "description": "Mutate cache version check: change 'not key.endswith' to 'key.endswith'",
+      "status": "SURVIVED",
+      "duration_sec": 3.897651399998722,
+      "stdout_snippet": ""
+    },
+    {
+      "mutant_id": 3,
+      "description": "Mutate cache get fallback: change 'return None' to 'return data'",
+      "status": "SURVIVED",
+      "duration_sec": 3.8655275000000984,
+      "stdout_snippet": ""
+    }
+  ]
+}

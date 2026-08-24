@@ -9,6 +9,7 @@ from backend.utils.response import standard_response
 from backend.models.reservation import ReservationGroup
 from backend.exceptions.reservation_exceptions import ReservationNotFoundException
 from backend.exceptions.base import PermissionDeniedException
+from datetime import datetime, timezone
 
 router = APIRouter()
 
@@ -109,7 +110,7 @@ async def get_show_stats(
     )
     
     # Active, unexpired reserved count
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     reserved_count = (
         db.query(func.count(SeatReservation.id))
         .join(ReservationGroup, SeatReservation.reservation_group_id == ReservationGroup.id)

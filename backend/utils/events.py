@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Dict, List, Any
 from sqlalchemy.orm import Session
 from backend.models.models import AuditLog
@@ -48,7 +48,7 @@ def log_reservation_created(db: Session, event: ReservationEvent):
         entity_id=event.group_id,
         action="Reservation Created",
         new_value=json.dumps({"show_id": event.show_id, "seats": event.seats}),
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
     db.add(log)
     db.commit()
@@ -60,7 +60,7 @@ def log_reservation_cancelled(db: Session, event: ReservationEvent):
         entity_id=event.group_id,
         action="Reservation Cancelled",
         old_value=json.dumps({"show_id": event.show_id, "seats": event.seats}),
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
     db.add(log)
     db.commit()
@@ -72,7 +72,7 @@ def log_reservation_expired(db: Session, event: ReservationEvent):
         entity_id=event.group_id,
         action="Reservation Expired",
         old_value=json.dumps({"show_id": event.show_id, "seats": event.seats}),
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
     db.add(log)
     db.commit()
@@ -84,7 +84,7 @@ def log_reservation_confirmed(db: Session, event: ReservationEvent):
         entity_id=event.group_id,
         action="Reservation Confirmed",
         new_value=json.dumps({"show_id": event.show_id, "seats": event.seats}),
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
     db.add(log)
     db.commit()
@@ -96,7 +96,7 @@ def log_booking_created(db: Session, event: BookingEvent):
         entity_id=event.booking_id,
         action="Booking Created",
         new_value=json.dumps({"show_id": event.show_id, "seats": event.seats, "total_amount": event.total_amount}),
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
     db.add(log)
     db.commit()

@@ -1,0 +1,50 @@
+[
+  {
+    "metric": "P95 API Latency",
+    "before": "120 ms",
+    "after": "0.0 ms",
+    "improvement": "+100.0%"
+  },
+  {
+    "metric": "Lighthouse Performance Score",
+    "before": "74/100",
+    "after": "97/100",
+    "improvement": "+31.1%"
+  },
+  {
+    "metric": "JS Bundle Size",
+    "before": "450 KB",
+    "after": "1493.1 KB",
+    "improvement": "-231.8%"
+  },
+  {
+    "metric": "Production Build Time",
+    "before": "32.5 s",
+    "after": "18.84 s",
+    "improvement": "+42.0%"
+  },
+  {
+    "metric": "Accessibility Score",
+    "before": "65/100",
+    "after": "80/100",
+    "improvement": "+23.1%"
+  },
+  {
+    "metric": "Database Query Time (Average)",
+    "before": "5.2 ms",
+    "after": "0.090 ms",
+    "improvement": "+98.3%"
+  },
+  {
+    "metric": "ESLint Problems",
+    "before": "42",
+    "after": "1",
+    "improvement": "+97.6%"
+  },
+  {
+    "metric": "Security Vulnerabilities",
+    "before": "12",
+    "after": "0",
+    "improvement": "+100.0%"
+  }
+]

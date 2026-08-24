@@ -76,7 +76,8 @@ export default function BookingDetailPage() {
 
   const handleShare = () => {
     if (!booking) return;
-    const text = `Cinema Plus Ticket: "${booking.movie.title}" - Seats: ${booking.booked_seats?.map(s => s.seat_name).join(", ")} on ${booking.show?.date || "N/A"} at ${booking.show?.start_time?.slice(0, 5) || "N/A"}. View details at http://localhost:3000/bookings/${booking.id}`;
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const text = `Cinema Plus Ticket: "${booking.movie.title}" - Seats: ${booking.booked_seats?.map(s => s.seat_name).join(", ")} on ${booking.show?.date || "N/A"} at ${booking.show?.start_time?.slice(0, 5) || "N/A"}. View details at ${origin}/bookings/${booking.id}`;
     
     navigator.clipboard.writeText(text);
     setCopied(true);

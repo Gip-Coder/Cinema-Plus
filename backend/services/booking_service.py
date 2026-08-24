@@ -38,25 +38,26 @@ class BookingService:
             requested_seat_names, booking_data.show_id, booking_data.movie_id
         )
         if existing:
-            raise SeatsAlreadyBookedException([e.seat_name for e in existing])
+            raise SeatsAlreadyBookedException([str(e.seat_name) for e in existing])
 
         # Server-side dynamic price recalculation
         calculated_total = 0.0
         for seat in booking_data.seats:
-            res = calculate_dynamic_price(self.db, booking_data.show_id, seat.category)
+            res = calculate_dynamic_price(self.db, int(booking_data.show_id or 0), seat.category)
             calculated_total += res["final_price"]
 
-        # Create Booking
+        # Create Booking — stage only, do NOT commit yet
         new_booking = Booking(
             user_id=current_user.id,
             movie_id=booking_data.movie_id,
             show_id=booking_data.show_id,
             total_amount=round(calculated_total, 2)
         )
-        new_booking = self.booking_repo.create(new_booking)
-        self.booking_repo.flush()
+        # stage() adds to session without committing; flush() assigns the DB ID
+        self.booking_repo.stage(new_booking)
+        self.booking_repo.flush()  # now new_booking.id is populated
 
-        # Create Booked Seats
+        # Create Booked Seats within the same uncommitted transaction
         for seat in booking_data.seats:
             new_seat = BookedSeat(
                 booking_id=new_booking.id,
@@ -66,17 +67,22 @@ class BookingService:
                 category=seat.category
             )
             self.booking_repo.add_booked_seat(new_seat)
-        self.booking_repo.commit()
+
+        # Single atomic commit — booking + all seats committed together.
+        # If any booked_seats INSERT fails (e.g. unique constraint violation),
+        # the booking itself is also rolled back. No partial bookings visible.
+        self.booking_repo.commit_transaction()
         self.booking_repo.refresh(new_booking)
 
         # Send email confirmation
         try:
-            movie = self.movie_repo.get_by_id(new_booking.movie_id)
-            show_obj = self.theatre_repo.get_show_by_id(new_booking.show_id) if new_booking.show_id else None
-            pdf_bytes = generate_ticket_pdf(new_booking, current_user, movie, show_obj)
-            background_tasks.add_task(
-                send_booking_confirmation, current_user.email, new_booking.id, movie.title, pdf_bytes
-            )
+            movie = self.movie_repo.get_by_id(int(new_booking.movie_id))
+            show_obj = self.theatre_repo.get_show_by_id(int(new_booking.show_id)) if new_booking.show_id else None
+            if movie and current_user.email:
+                pdf_bytes = generate_ticket_pdf(new_booking, current_user, movie, show_obj)
+                background_tasks.add_task(
+                    send_booking_confirmation, str(current_user.email), int(new_booking.id), str(movie.title), pdf_bytes
+                )
         except Exception as e:
             print(f"Email preparation error: {e}")
 

@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from backend.models.models import AuditLog
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 def log_action(
@@ -39,7 +39,7 @@ def log_action(
         old_value=old_str,
         new_value=new_str,
         ip_address=ip_address,
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
     
     db.add(log_entry)

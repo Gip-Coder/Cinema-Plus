@@ -39,7 +39,7 @@ class AuthService:
         )
         return {"access_token": access_token, "token_type": "bearer"}
 
-    async def update_profile(self, current_user: User, username: str = None, email: str = None) -> User:
+    async def update_profile(self, current_user: User, username: str | None = None, email: str | None = None) -> User:
         if username and username != current_user.username:
             if self.user_repo.get_by_username(username):
                 raise UsernameTakenException(username)

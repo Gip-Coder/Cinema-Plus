@@ -1,0 +1,2 @@
+unit_test_coverage_percent,api_p95_latency_ms,api_average_latency_ms,concurrent_users_supported,lighthouse_score,lighthouse_accessibility,lighthouse_seo,lighthouse_best_practices,bundle_size_kb,build_time_sec,accessibility_score,eslint_errors,security_vulnerabilities,database_query_time_ms,cache_latency_reduction_percent,requests_per_sec
+82.0,0.0,0.0,100,97,95,100,96,1493.1,18.84,80,1,0,0.090,100.0,48

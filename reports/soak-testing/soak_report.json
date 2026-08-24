@@ -1,0 +1,32 @@
+{
+  "timestamp": "2026-06-27T12:11:12.110Z",
+  "duration_seconds": 10,
+  "start_memory_mb": 3.95703125,
+  "end_memory_mb": 3.95703125,
+  "leak_growth_mb": 0,
+  "total_requests": 37400,
+  "error_count": 37300,
+  "throughput_degradation_percent": 0.2,
+  "memory_timeline": [
+    {
+      "time_elapsed_sec": 0,
+      "memory_mb": 3.95703125
+    },
+    {
+      "time_elapsed_sec": 2,
+      "memory_mb": 3.95703125
+    },
+    {
+      "time_elapsed_sec": 4,
+      "memory_mb": 3.95703125
+    },
+    {
+      "time_elapsed_sec": 6,
+      "memory_mb": 3.95703125
+    },
+    {
+      "time_elapsed_sec": 8,
+      "memory_mb": 3.95703125
+    }
+  ]
+}

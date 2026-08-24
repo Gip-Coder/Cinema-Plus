@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-06-27T12:10:36.599Z",
+  "npm_audit_executed": true,
+  "npm_vulnerabilities_count": 28,
+  "bandit_executed": false,
+  "bandit_issues_count": 0,
+  "secrets_exposed_count": 1,
+  "secrets_exposed": [
+    {
+      "file": "scripts\\profile_backend.py",
+      "matches": [
+        {
+          "line": 54,
+          "matchedText": "password=\"SecurePassword123\"..."
+        }
+      ]
+    }
+  ]
+}

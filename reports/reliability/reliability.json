@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-06-27T12:10:48.116Z",
+  "recovery_time_ms": 2,
+  "success_rate": "33",
+  "timeline": [
+    {
+      "event": "Baseline Connection",
+      "status": "FAILED",
+      "detail": "Failed connection: "
+    },
+    {
+      "event": "Database Disconnect Injection",
+      "status": "FAILED",
+      "detail": "Bypasses connection block and issues warning error logs as expected."
+    },
+    {
+      "event": "API Timeout Simulation",
+      "status": "SUCCESS",
+      "detail": "Responded in 2 ms"
+    }
+  ]
+}

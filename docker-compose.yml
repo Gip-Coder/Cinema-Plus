@@ -1,0 +1,137 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Cinema Plus — Docker Compose (Local Development + Staging)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Quick Start:
+#   1. Copy .env.example to .env and fill in your values
+#   2. docker compose up --build
+#   3. Run migrations: docker compose exec backend python -m alembic upgrade head
+#   4. (Optional) Seed data: docker compose exec backend python scripts/seed_db.py
+#
+# Services:
+#   - mysql    → MySQL 8.0 database (internal only, not exposed in production mode)
+#   - backend  → FastAPI API server on port 8001
+#   - frontend → Next.js frontend on port 3005
+#
+# IMPORTANT — Media Storage:
+#   Uploads are persisted via the `uploads_data` Docker volume.
+#   In production on ephemeral platforms (Render free tier, etc.), this volume
+#   may not persist across deployments. Use a dedicated persistent disk or
+#   migrate to cloud storage (S3/Cloudinary) for production reliability.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── MySQL Database ───────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: cinemaplus_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword_change_me}
+      MYSQL_DATABASE: ${DB_NAME:-MovieTicketBooking}
+      MYSQL_USER: ${DB_USER:-cinemaplus}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-dbpassword_change_me}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    # Only expose the DB port on localhost — never expose to public in production
+    ports:
+      - "127.0.0.1:3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "--password=${MYSQL_ROOT_PASSWORD:-rootpassword_change_me}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - cinemaplus_network
+
+  # ── FastAPI Backend ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cinemaplus_backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_USER: ${DB_USER:-cinemaplus}
+      DB_PASSWORD: ${DB_PASSWORD:-dbpassword_change_me}
+      DB_NAME: ${DB_NAME:-MovieTicketBooking}
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@cinemaplus.local}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3005}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3005}
+      RESERVATION_TIMEOUT_MINUTES: ${RESERVATION_TIMEOUT_MINUTES:-10}
+      ENABLE_DOCS: ${ENABLE_DOCS:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      PORT: "8001"
+    volumes:
+      # IMPORTANT: Mount uploads as a persistent volume.
+      # Without this, uploaded files will be lost when the container restarts.
+      - uploads_data:/app/uploads
+    ports:
+      - "8001:8001"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - cinemaplus_network
+
+  # ── Next.js Frontend ─────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        # NEXT_PUBLIC_API_BASE_URL must be set at BUILD TIME for Next.js
+        # to bake it into the client-side bundle.
+        # When deploying, set this to your backend's public URL.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8001}
+    container_name: cinemaplus_frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3005"
+    ports:
+      - "3005:3005"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - cinemaplus_network
+
+# ── Volumes ──────────────────────────────────────────────────────────────────
+volumes:
+  mysql_data:
+    driver: local
+    # In production on a VPS, you may want to bind-mount to a specific host path:
+    # driver_opts:
+    #   type: none
+    #   o: bind
+    #   device: /data/cinemaplus/mysql
+  uploads_data:
+    driver: local
+    # Same note: bind-mount to a persistent host path in production
+    # to ensure uploaded media survives container restarts.
+
+# ── Networks ─────────────────────────────────────────────────────────────────
+networks:
+  cinemaplus_network:
+    driver: bridge

@@ -1,73 +1,201 @@
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
 from fastapi import FastAPI, Depends, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
-from backend.database import engine, Base, SessionLocal, get_db
-from backend.models import models
-from backend.routes import auth_routes, movie_routes, booking_routes, ticket_routes, admin_routes, schedule_routes, review_routes, reservation_routes, layout_routes
-from backend.auth.security import get_password_hash
-from sqlalchemy import event, text
-from sqlalchemy.orm import Session
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy import event, text
+from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+
 import os
 import time
 import threading
 import uuid
-import json
-from datetime import datetime
+import sys
+from datetime import datetime, timezone
 
-app = FastAPI(title="Cinema Plus API", version="1.0.0")
+from backend.database import engine, Base, SessionLocal, get_db
+from backend.models import models
+from backend.routes import (
+    auth_routes,
+    movie_routes,
+    booking_routes,
+    ticket_routes,
+    admin_routes,
+    schedule_routes,
+    review_routes,
+    reservation_routes,
+    layout_routes,
+)
+from backend.auth.security import get_password_hash
+from backend.core.config import settings
+from backend.exceptions.base import CinemaPlusException
 
-# Mount uploads static files (Task 5: unified static mount)
+
+# ── Upload directories ─────────────────────────────────────────────────────────
 os.makedirs("uploads/posters", exist_ok=True)
 os.makedirs("uploads/banners", exist_ok=True)
 os.makedirs("uploads/defaults", exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+os.makedirs("uploads/media/original", exist_ok=True)
+os.makedirs("uploads/media/medium", exist_ok=True)
+os.makedirs("uploads/media/thumbnails", exist_ok=True)
 
-# Thread-local storage to count queries executed per request
+
+# ── Per-request query counter ──────────────────────────────────────────────────
 thread_local = threading.local()
+
 
 @event.listens_for(engine, "before_cursor_execute")
 def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
     if hasattr(thread_local, "query_count"):
         thread_local.query_count += 1
 
+
+# ── Security headers middleware ────────────────────────────────────────────────
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["X-XSS-Protection"] = "0"  # Modern browsers use CSP instead
+        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+        return response
+
+
+# ── Request logging middleware ─────────────────────────────────────────────────
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next) -> Response:
         thread_local.query_count = 0
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
         start_time = time.time()
-        
+
         response = await call_next(request)
-        
+
         duration_ms = (time.time() - start_time) * 1000
         query_count = getattr(thread_local, "query_count", 0)
-        
-        # Set performance headers
+
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Response-Time-Ms"] = f"{duration_ms:.2f}"
         response.headers["X-Query-Count"] = str(query_count)
-        
-        # Task 11 Request Logging
-        print(f"[Request {request_id}] {request.method} {request.url.path} - Status: {response.status_code} | Queries: {query_count} | Latency: {duration_ms:.2f}ms")
+
+        # Log at INFO level — NOTE: never log query params that may contain passwords
+        print(
+            f"[{request_id}] {request.method} {request.url.path} "
+            f"-> {response.status_code} | queries={query_count} | {duration_ms:.1f}ms"
+        )
         return response
 
-# Register Middleware
+
+# ── Admin bootstrap ────────────────────────────────────────────────────────────
+def _bootstrap_admin(db: Session) -> None:
+    """Create initial admin user if one does not already exist.
+
+    The admin password MUST come from the ADMIN_PASSWORD environment variable.
+    In production, the application will refuse to start if ADMIN_PASSWORD is not set.
+    In development, a warning is printed and a temporary insecure password is used.
+    """
+    existing_admin = db.query(models.User).filter(models.User.username == "admin").first()
+    if existing_admin:
+        return  # Admin already exists — do not touch it
+
+    admin_password = settings.ADMIN_PASSWORD
+
+    if not admin_password:
+        if settings.is_production:
+            raise RuntimeError(
+                "[STARTUP ERROR] ADMIN_PASSWORD environment variable is not set. "
+                "Cannot create initial admin account without it in production. "
+                "Set ADMIN_PASSWORD in your environment configuration."
+            )
+        # Development-only fallback — loud warning
+        print(
+            "\n" + "=" * 70 + "\n"
+            "[WARNING] ADMIN_PASSWORD is not set.\n"
+            "  Creating development admin with temporary password: dev-admin-change-me\n"
+            "  THIS MUST NEVER HAPPEN IN PRODUCTION.\n"
+            "  Set ADMIN_PASSWORD in your .env file.\n"
+            + "=" * 70 + "\n",
+            file=sys.stderr,
+        )
+        admin_password = "dev-admin-change-me"
+
+    print("Creating initial admin user...")
+    hashed_pw = get_password_hash(admin_password)
+    new_admin = models.User(
+        username="admin",
+        email=settings.ADMIN_EMAIL,
+        hashed_password=hashed_pw,
+        role="admin",
+    )
+    db.add(new_admin)
+    db.commit()
+    print(f"Admin user created with email: {settings.ADMIN_EMAIL}")
+
+
+# ── Lifespan (replaces deprecated @app.on_event) ──────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    # Validate production config before accepting any traffic
+    try:
+        settings.validate_production_config()
+    except RuntimeError as e:
+        print(f"\n{e}\n", file=sys.stderr)
+        sys.exit(1)
+
+    # Bootstrap admin account
+    db = SessionLocal()
+    try:
+        _bootstrap_admin(db)
+    except RuntimeError as e:
+        print(f"\n{e}\n", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        db.close()
+
+    yield  # Application runs here
+
+    # Shutdown tasks (add any cleanup here)
+    print("Cinema Plus API shutting down.")
+
+
+# ── FastAPI Application ────────────────────────────────────────────────────────
+# Disable interactive docs in production unless explicitly enabled
+_docs_url = "/docs" if (not settings.is_production or settings.ENABLE_DOCS) else None
+_redoc_url = "/redoc" if (not settings.is_production or settings.ENABLE_DOCS) else None
+
+app = FastAPI(
+    title="Cinema Plus API",
+    version="1.0.0",
+    lifespan=lifespan,
+    docs_url=_docs_url,
+    redoc_url=_redoc_url,
+)
+
+# ── Static files ───────────────────────────────────────────────────────────────
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+# ── Middleware (order matters — outermost runs first/last) ─────────────────────
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    expose_headers=["X-Request-ID", "X-Response-Time-Ms", "X-Query-Count"],
 )
 
-# Centralized Exception Handlers (Task 10)
+
+# ── Exception handlers ─────────────────────────────────────────────────────────
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = exc.errors()
@@ -77,9 +205,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         msg = err["msg"]
         err_msgs.append(f"{loc}: {msg}")
     detail_msg = "Validation Error: " + "; ".join(err_msgs)
-    print(f"[VALIDATION ERROR] Request: {request.method} {request.url.path} | {detail_msg}")
-    
-    # Ensure all error elements are JSON serializable (convert Exception instances in ctx to string)
+    print(f"[VALIDATION ERROR] {request.method} {request.url.path} | {detail_msg}")
+
     serializable_errors = []
     for err in errors:
         cleaned_err = dict(err)
@@ -92,29 +219,30 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": detail_msg, "errors": serializable_errors}
+        content={"detail": detail_msg, "errors": serializable_errors},
     )
+
 
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
-    err_msg = str(exc.__dict__.get("orig") or exc)
-    print(f"[DATABASE ERROR] Request: {request.method} {request.url.path} | Error: {err_msg}")
+    # Log the real error internally but return a safe message to clients
+    print(f"[DATABASE ERROR] {request.method} {request.url.path} | {type(exc).__name__}")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": f"Database transaction failed: {err_msg}"}
+        content={"detail": "A database error occurred. Please try again later."},
     )
 
-from backend.exceptions.base import CinemaPlusException
 
 @app.exception_handler(CinemaPlusException)
 async def cinemaplus_exception_handler(request: Request, exc: CinemaPlusException):
-    print(f"[API ERROR] Request: {request.method} {request.url.path} | Error: {exc.detail}")
+    print(f"[API ERROR] {request.method} {request.url.path} | {exc.detail}")
     return JSONResponse(
         status_code=exc.status_code,
-        content={"detail": exc.detail}
+        content={"detail": exc.detail},
     )
 
-# Include routers
+
+# ── Routers ────────────────────────────────────────────────────────────────────
 app.include_router(auth_routes.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(movie_routes.router, prefix="/api/movies", tags=["Movies"])
 app.include_router(booking_routes.router, prefix="/api/bookings", tags=["Bookings"])
@@ -126,32 +254,11 @@ app.include_router(reservation_routes.router, prefix="/api", tags=["Reservations
 app.include_router(layout_routes.router, prefix="/api/layouts", tags=["Layouts"])
 
 
-# Application startup logic
-# pyrefly: ignore [deprecated]
-@app.on_event("startup")
-def startup_event():
-    # Base.metadata.create_all(bind=engine) # Handled by Alembic migrations now
-    
-    db = SessionLocal()
-    try:
-        admin_user = db.query(models.User).filter(models.User.username == "admin").first()
-        if not admin_user:
-            print("Creating initial admin user...")
-            hashed_pw = get_password_hash("admin123")
-            new_admin = models.User(
-                username="admin",
-                email="admin@example.com",
-                hashed_password=hashed_pw,
-                role="admin"
-            )
-            db.add(new_admin)
-            db.commit()
-    finally:
-        db.close()
-
+# ── Root / health endpoints ────────────────────────────────────────────────────
 @app.get("/")
 def root():
-    return {"message": "Welcome to the Movie Ticket Booking API!"}
+    return {"message": "Cinema Plus API", "status": "running", "version": "1.0.0"}
+
 
 @app.get("/health")
 def health_check(db: Session = Depends(get_db)):
@@ -160,18 +267,17 @@ def health_check(db: Session = Depends(get_db)):
         "database": "ok",
         "storage": "ok",
         "version": "1.0.0",
-        # pyrefly: ignore [deprecated]
-        "timestamp": datetime.utcnow().isoformat() + "Z"
+        "environment": settings.APP_ENV,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-    
-    # Check Database connectivity
+
     try:
         db.execute(text("SELECT 1"))
     except Exception as e:
-        health_status["database"] = f"error: {str(e)}"
+        health_status["database"] = "error"
         health_status["status"] = "unhealthy"
-        
-    # Check Storage accessibility
+        print(f"[HEALTH] Database check failed: {type(e).__name__}")
+
     try:
         os.makedirs("uploads", exist_ok=True)
         test_file = os.path.join("uploads", ".health_test")
@@ -179,9 +285,10 @@ def health_check(db: Session = Depends(get_db)):
             f.write("test")
         os.remove(test_file)
     except Exception as e:
-        health_status["storage"] = f"error: {str(e)}"
+        health_status["storage"] = "error"
         health_status["status"] = "unhealthy"
-        
+        print(f"[HEALTH] Storage check failed: {type(e).__name__}")
+
     if health_status["status"] == "unhealthy":
         return JSONResponse(status_code=503, content=health_status)
     return health_status

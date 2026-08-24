@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 from typing import List, Optional
 from datetime import datetime
 
@@ -13,6 +13,10 @@ class SeatReservationResponse(BaseModel):
     status: str
     created_at: datetime
 
+    @field_serializer("created_at")
+    def serialize_created_at(self, dt: datetime) -> str:
+        return dt.isoformat() + "Z" if dt.tzinfo is None else dt.isoformat()
+
     class Config:
         from_attributes = True
 
@@ -26,6 +30,10 @@ class ReservationGroupResponse(BaseModel):
     status: str
     created_at: datetime
     reserved_seats: List[SeatReservationResponse] = []
+
+    @field_serializer("reserved_at", "expires_at", "created_at")
+    def serialize_datetimes(self, dt: datetime) -> str:
+        return dt.isoformat() + "Z" if dt.tzinfo is None else dt.isoformat()
 
     class Config:
         from_attributes = True

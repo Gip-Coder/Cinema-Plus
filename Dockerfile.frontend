@@ -1,0 +1,56 @@
+# ── Stage 1: Install dependencies ─────────────────────────────────────────────
+FROM node:20-alpine AS deps
+
+WORKDIR /app
+
+# Install dependencies using exact lockfile for reproducible builds
+COPY package.json package-lock.json* ./
+RUN npm ci --ignore-scripts
+
+
+# ── Stage 2: Build the Next.js application ────────────────────────────────────
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy installed node_modules from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Set the backend API URL at build time.
+# In production, set NEXT_PUBLIC_API_BASE_URL to your real backend URL
+# via the deployment platform's environment variable configuration.
+ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8001
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+
+# Configure Next.js standalone output for optimal Docker image size
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN npm run build
+
+
+# ── Stage 3: Production runtime image ─────────────────────────────────────────
+FROM node:20-alpine AS runtime
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Create non-root user
+RUN addgroup --system --gid 1001 cinemaplus \
+    && adduser --system --uid 1001 cinemaplus
+
+# Copy only what's needed to run Next.js in production
+COPY --from=builder --chown=cinemaplus:cinemaplus /app/.next ./.next
+COPY --from=builder --chown=cinemaplus:cinemaplus /app/node_modules ./node_modules
+COPY --from=builder --chown=cinemaplus:cinemaplus /app/package.json ./package.json
+COPY --from=builder --chown=cinemaplus:cinemaplus /app/public ./public
+
+USER cinemaplus
+
+EXPOSE 3005
+
+# Production startup — uses `next start` (not `next dev`)
+# PORT env var allows deployment platforms to override the port
+CMD ["sh", "-c", "node_modules/.bin/next start --port ${PORT:-3005}"]

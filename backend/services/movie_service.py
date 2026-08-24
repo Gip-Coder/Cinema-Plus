@@ -4,7 +4,7 @@ from backend.exceptions.movie_exceptions import MovieNotFoundException
 from backend.models.models import Movie, User
 from backend.schemas.movie import MovieCreate, MovieUpdate
 from backend.utils.cache import cache
-from datetime import datetime
+from datetime import datetime, timezone
 
 class MovieService:
     def __init__(self, db: Session):
@@ -30,7 +30,7 @@ class MovieService:
             movie_dict["poster_source_type"] = "upload"
             
         new_movie = Movie(**movie_dict)
-        new_movie.poster_uploaded_at = datetime.utcnow()
+        new_movie.poster_uploaded_at = datetime.now(timezone.utc)
         new_movie.is_deleted = False
         
         movie = self.movie_repo.create(new_movie)
@@ -59,7 +59,7 @@ class MovieService:
             if not update_data["poster_url"] or not update_data["poster_url"].strip():
                 update_data["poster_url"] = "/uploads/defaults/no-poster.png"
                 update_data["poster_source_type"] = "upload"
-            movie.poster_uploaded_at = datetime.utcnow()
+            movie.poster_uploaded_at = datetime.now(timezone.utc)
             
         for key, value in update_data.items():
             setattr(movie, key, value)
@@ -86,7 +86,7 @@ class MovieService:
         old_val = {"is_deleted": movie.is_deleted, "deleted_at": movie.deleted_at}
         
         movie.is_deleted = True
-        movie.deleted_at = datetime.utcnow()
+        movie.deleted_at = datetime.now(timezone.utc)
         self.movie_repo.save(movie)
         
         # Log action

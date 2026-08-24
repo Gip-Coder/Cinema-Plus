@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Bundle Size Treemap</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-treemap@3.0.0"></script>
+</head>
+<body class="bg-zinc-950 text-zinc-100 p-8">
+  <h1 class="text-3xl font-extrabold mb-4 tracking-wider text-red-500">NEXT.JS BUNDLE TREEMAP</h1>
+  <p class="text-zinc-400 mb-8">Audited static chunk modules distribution for the Cinema Plus production bundle.</p>
+  
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <div class="lg:col-span-2 bg-zinc-900/50 border border-white/[0.05] p-6 rounded-2xl">
+      <h2 class="text-xl font-bold mb-4">Size Treemap</h2>
+      <div style="height: 500px; position: relative;">
+        <canvas id="treemapCanvas"></canvas>
+      </div>
+    </div>
+    
+    <div class="bg-zinc-900/50 border border-white/[0.05] p-6 rounded-2xl flex flex-col justify-between">
+      <div>
+        <h2 class="text-xl font-bold mb-4">Summary Statistics</h2>
+        <div class="space-y-4">
+          <div>
+            <span class="text-zinc-500 text-sm">Total JS size</span>
+            <div class="text-2xl font-semibold">1493.1 KB</div>
+          </div>
+          <div>
+            <span class="text-zinc-500 text-sm">JS Brotli size</span>
+            <div class="text-2xl font-semibold text-green-400">361.4 KB</div>
+          </div>
+          <div>
+            <span class="text-zinc-500 text-sm">Total CSS size</span>
+            <div class="text-2xl font-semibold">54.5 KB</div>
+          </div>
+          <div>
+            <span class="text-zinc-500 text-sm">Duplicates Count</span>
+            <div class="text-2xl font-semibold text-amber-500">33</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const ctx = document.getElementById('treemapCanvas').getContext('2d');
+    const chunks = [{"name":"framework-610e2e58afe74775.js","type":"js","size":381166,"gzip":119009,"brotli":65055},{"name":"493-dbd4607ff9cca169.js","type":"js","size":173381,"gzip":46335,"brotli":37975},{"name":"4bd1b696-c023c6e3521b1417.js","type":"js","size":173019,"gzip":54358,"brotli":46749},{"name":"main-3b5e5db59cff96d2.js","type":"js","size":123171,"gzip":35468,"brotli":30371},{"name":"polyfills-42372ed130431b0a.js","type":"js","size":112594,"gzip":39627,"brotli":35158},{"name":"c17842db9bc454e9.css","type":"css","size":55826,"gzip":10011,"brotli":8198},{"name":"page-b175a5ba1c2a4513.js","type":"js","size":34741,"gzip":8800,"brotli":7732},{"name":"page-61f059c8b05543ee.js","type":"js","size":32331,"gzip":9164,"brotli":8070},{"name":"719-ad44d31d527e9d51.js","type":"js","size":32278,"gzip":10244,"brotli":9223},{"name":"page-de2cb70ec57f5d8a.js","type":"js","size":29645,"gzip":9054,"brotli":7947},{"name":"page-ce21b776791de301.js","type":"js","size":28943,"gzip":7527,"brotli":6596},{"name":"page-ff80d9b33f87bfb8.js","type":"js","size":26233,"gzip":7625,"brotli":6699},{"name":"page-79b26265558e734f.js","type":"js","size":24157,"gzip":7097,"brotli":6275},{"name":"page-23d99f0bd3f76dda.js","type":"js","size":22782,"gzip":7269,"brotli":6428},{"name":"page-d079a36377ef7da4.js","type":"js","size":21155,"gzip":6014,"brotli":5318},{"name":"page-168bb78fb0f81487.js","type":"js","size":18768,"gzip":6275,"brotli":5562},{"name":"page-2061b310289ef1c6.js","type":"js","size":18572,"gzip":4885,"brotli":4279},{"name":"layout-5567ed8f83938657.js","type":"js","size":18518,"gzip":6048,"brotli":5287},{"name":"page-cf2668e6df166c5d.js","type":"js","size":17273,"gzip":5082,"brotli":4433},{"name":"502-9d9880bab59a1451.js","type":"js","size":16934,"gzip":6198,"brotli":5532},{"name":"page-6ed78f993312cb6c.js","type":"js","size":16435,"gzip":5533,"brotli":4868},{"name":"page-56a03373a6e612fe.js","type":"js","size":14148,"gzip":4180,"brotli":3714},{"name":"page-02a1845b38a73109.js","type":"js","size":13749,"gzip":3917,"brotli":3475},{"name":"page-b77dc5d09d5d16db.js","type":"js","size":13693,"gzip":4919,"brotli":4312},{"name":"layout-e842797bd0305a02.js","type":"js","size":13166,"gzip":4415,"brotli":3974},{"name":"page-84b884709b809693.js","type":"js","size":13111,"gzip":3892,"brotli":3405},{"name":"page-de7fd9b217004846.js","type":"js","size":13103,"gzip":4512,"brotli":3943},{"name":"page-b90f1bb7e8e06cd9.js","type":"js","size":12974,"gzip":3586,"brotli":3119},{"name":"page-eca5dc09f9f6bd17.js","type":"js","size":12912,"gzip":3867,"brotli":3458},{"name":"page-cfc14cd5611abfc5.js","type":"js","size":12515,"gzip":4414,"brotli":3887}];
+    
+    const chart = new Chart(ctx, {
+      type: 'treemap',
+      data: {
+        datasets: [{
+          label: 'JS & CSS Static Chunks',
+          tree: chunks,
+          key: 'size',
+          groups: ['type', 'name'],
+          borderWidth: 1,
+          borderColor: '#18181b',
+          backgroundColor: (ctx) => {
+            if (ctx.type === 'data') {
+              return ctx.raw._data.type === 'js' ? 'rgba(239, 68, 68, 0.7)' : 'rgba(59, 130, 246, 0.7)';
+            }
+            return 'rgba(255,255,255,0.1)';
+          },
+          spacing: 1
+        }]
+      },
+      options: {
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: (items) => items[0].raw._data.name,
+              label: (item) => 'Size: ' + (item.raw._data.size / 1024).toFixed(1) + ' KB'
+            }
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>

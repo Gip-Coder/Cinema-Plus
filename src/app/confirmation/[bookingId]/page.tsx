@@ -55,25 +55,17 @@ export default function ConfirmationPage() {
   const handleDownloadPDF = async () => {
     if (!bookingId || !accessToken) return;
     try {
-      // Direct link download to the backend API endpoint
-      const url = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"}/api/tickets/ticket/${bookingId}/pdf`;
-      
-      // Open in a new tab or trigger a browser download
-      const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${accessToken}` }
+      const blob = await apiClient.blob(`/api/tickets/ticket/${bookingId}/pdf`, {
+        token: accessToken,
       });
-      if (response.ok) {
-        const blob = await response.blob();
-        const downloadUrl = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = downloadUrl;
-        a.download = `cinema_plus_ticket_${bookingId}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      } else {
-        alert("Failed to download ticket PDF from server.");
-      }
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = `cinema_plus_ticket_${bookingId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
     } catch (err) {
       console.error("PDF download error:", err);
       alert("Error initiating PDF download.");

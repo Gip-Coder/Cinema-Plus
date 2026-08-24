@@ -1,36 +1,48 @@
 import os
 import sys
+from dotenv import load_dotenv
+
+load_dotenv()
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from sqlalchemy.orm import Session
 from backend.database import SessionLocal, engine, Base
 from backend.models import models
 from backend.auth.security import get_password_hash
-from datetime import date, datetime
+from backend.core.config import settings
+from datetime import date, datetime, timezone
+
 
 def seed_database():
     print("Creating tables...")
     Base.metadata.create_all(bind=engine)
-    
+
     db = SessionLocal()
-    
+
     try:
-        # Seeding Users granularly
-        if not db.query(models.User).first():
-            print("Seeding Users...")
+        # Seeding Admin User granularly
+        if not db.query(models.User).filter(models.User.username == "admin").first():
+            print("Seeding Admin User...")
+            admin_password = settings.ADMIN_PASSWORD
+            if not admin_password:
+                print(
+                    "\n[WARNING] ADMIN_PASSWORD is not set.\n"
+                    "  Admin will be created with a temporary placeholder password.\n"
+                    "  CHANGE THIS IMMEDIATELY after seeding!\n"
+                )
+                admin_password = "cinema-plus-change-me"
+
             admin = models.User(
                 username="admin",
-                email="admin@cinemaplus.com",
-                hashed_password=get_password_hash("admin123"),
-                role="admin"
+                email=settings.ADMIN_EMAIL or "admin@cinemaplus.local",
+                hashed_password=get_password_hash(admin_password),
+                role="admin",
             )
-            testuser = models.User(
-                username="testuser",
-                email="test@user.com",
-                hashed_password=get_password_hash("password123"),
-                role="customer"
-            )
-            db.add_all([admin, testuser])
+            db.add(admin)
             db.flush()
-            
+            print(f"  ✓ Admin user created (email: {admin.email})")
+
         # Seeding Movies granularly
         movies = db.query(models.Movie).all()
         if not movies:
@@ -46,7 +58,8 @@ def seed_database():
                     poster_url="https://image.tmdb.org/t/p/w500/1pdfLvkbY9ohJlCjQH2JGqqUT1O.jpg",
                     description="Paul Atreides unites with Chani and the Fremen while on a warpath of revenge against the conspirators who destroyed his family.",
                     duration=166,
-                    rating=8.8
+                    rating=8.8,
+                    is_deleted=False,
                 ),
                 models.Movie(
                     title="Oppenheimer",
@@ -58,12 +71,13 @@ def seed_database():
                     poster_url="https://image.tmdb.org/t/p/w500/8Gxv8gSFCU0XGDykEGv7zR1n2ua.jpg",
                     description="The story of American scientist J. Robert Oppenheimer and his role in the development of the atomic bomb.",
                     duration=180,
-                    rating=8.6
-                )
+                    rating=8.6,
+                    is_deleted=False,
+                ),
             ]
             db.add_all(movies)
             db.flush()
-            
+
         # Seeding Theatres granularly
         theatre = db.query(models.Theatre).first()
         if not theatre:
@@ -76,11 +90,11 @@ def seed_database():
                 timezone="UTC",
                 contact_info="contact@grandplaza.com",
                 description="The most premium cinema viewing experience in town featuring leather recliners and gourmet dining.",
-                is_active=True
+                is_active=True,
             )
             db.add(theatre)
             db.flush()
-            
+
         # Seeding Screens granularly
         screens = db.query(models.Screen).all()
         if not screens and theatre:
@@ -90,21 +104,21 @@ def seed_database():
                 name="Screen 1 (IMAX)",
                 screen_type="IMAX",
                 total_seats=220,
-                is_active=True
+                is_active=True,
             )
             screen2 = models.Screen(
                 theatre_id=theatre.id,
                 name="Screen 2 (Dolby Atmos)",
                 screen_type="Dolby Atmos",
                 total_seats=220,
-                is_active=True
+                is_active=True,
             )
             db.add_all([screen1, screen2])
             db.flush()
         else:
             screen1 = db.query(models.Screen).filter(models.Screen.name.like("%IMAX%")).first()
             screen2 = db.query(models.Screen).filter(models.Screen.name.like("%Dolby%")).first()
-            
+
         # Seeding Default Seat Pricings granularly
         pricings = db.query(models.SeatPricing).all()
         if not pricings and theatre:
@@ -112,14 +126,17 @@ def seed_database():
             s1_id = screen1.id if screen1 else None
             s2_id = screen2.id if screen2 else None
             for s_id in [None, s1_id, s2_id]:
-                if s_id is not None or not db.query(models.SeatPricing).filter(models.SeatPricing.theatre_id == theatre.id, models.SeatPricing.screen_id == s_id).first():
+                if s_id is not None or not db.query(models.SeatPricing).filter(
+                    models.SeatPricing.theatre_id == theatre.id,
+                    models.SeatPricing.screen_id == s_id,
+                ).first():
                     db.add_all([
                         models.SeatPricing(theatre_id=theatre.id, screen_id=s_id, seat_category="Normal", base_price=150.0),
                         models.SeatPricing(theatre_id=theatre.id, screen_id=s_id, seat_category="Executive", base_price=220.0),
-                        models.SeatPricing(theatre_id=theatre.id, screen_id=s_id, seat_category="Premium", base_price=300.0)
+                        models.SeatPricing(theatre_id=theatre.id, screen_id=s_id, seat_category="Premium", base_price=300.0),
                     ])
             db.flush()
-            
+
         # Seeding Shows granularly
         shows = db.query(models.Show).all()
         if not shows and movies and screen1 and screen2:
@@ -130,7 +147,7 @@ def seed_database():
                 start_time="13:00",
                 end_time="15:46",
                 date=date.today(),
-                price_multiplier=1.0
+                price_multiplier=1.0,
             )
             show2 = models.Show(
                 movie_id=movies[1].id,
@@ -138,18 +155,19 @@ def seed_database():
                 start_time="18:00",
                 end_time="21:00",
                 date=date.today(),
-                price_multiplier=1.0
+                price_multiplier=1.0,
             )
             db.add_all([show1, show2])
-            
+
         db.commit()
         print("Database verification & modular seeding complete!")
-        
+
     except Exception as e:
         print(f"Error seeding database: {e}")
         db.rollback()
     finally:
         db.close()
+
 
 if __name__ == "__main__":
     seed_database()

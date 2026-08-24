@@ -1,3 +1,4 @@
 python-interpreter-path = ".venv/Scripts/python.exe"
-python-search-paths = ["."]
+search-path = [".", "backend"]
+disable-search-path-heuristics = true
 

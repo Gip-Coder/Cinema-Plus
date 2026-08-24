@@ -1,0 +1,35 @@
+{
+  "timestamp": "2026-06-27T12:10:27.155513+00:00",
+  "database_type": "sqlite",
+  "tables_checked": [
+    "audit_logs",
+    "booked_seats",
+    "bookings",
+    "media_assets",
+    "movies",
+    "pricing_rules",
+    "reservation_groups",
+    "reviews",
+    "screens",
+    "seat_pricings",
+    "seat_reservations",
+    "shows",
+    "theatres",
+    "users"
+  ],
+  "existing_indexes_count": 46,
+  "missing_indexes_count": 1,
+  "missing_indexes": [
+    {
+      "table": "shows",
+      "column": "screen_id",
+      "reason": "Foreign key column 'screen_id' lacks an index, leading to table scans on joins."
+    }
+  ],
+  "average_query_latency_ms": 0.08952339999086689,
+  "best_query_latency_ms": 0.07680000089749228,
+  "worst_query_latency_ms": 0.28469999961089343,
+  "transactions_per_second": 11130.47814341024,
+  "connection_pool_size": 5,
+  "read_write_ratio": "80:20 (Default Query Profile)"
+}

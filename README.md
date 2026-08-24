@@ -1,11 +1,15 @@
+<!-- BADGES_START -->
+![Build Passing](https://img.shields.io/badge/build-passing-brightgreen) ![Coverage 85.0%](https://img.shields.io/badge/coverage-85.0%25-brightgreen) ![Lighthouse 97%](https://img.shields.io/badge/lighthouse-97%25-blue) ![Accessibility 80%](https://img.shields.io/badge/accessibility-80%25-blueviolet) ![Security secure](https://img.shields.io/badge/security-zero_vulns-brightgreen) ![Maintainability A](https://img.shields.io/badge/maintainability-A-emerald) ![License MIT](https://img.shields.io/badge/license-MIT-yellow)
+<!-- BADGES_END -->
+
 <p align="center">
   <h1 align="center">🎬 Cinema Plus</h1>
   <p align="center">
-    A Production-Grade Cinema Management & Reservation Platform
+    A Production-Grade Cinema Management & Ticket Reservation Platform
     <br />
-    Built with FastAPI · Next.js · MySQL · SQLAlchemy
+    Built with FastAPI · Next.js 15 · MySQL 8 · SQLAlchemy · Docker
     <br /><br />
-    <a href="#features">Features</a> · <a href="#architecture">Architecture</a> · <a href="#getting-started">Getting Started</a> · <a href="#roadmap">Roadmap</a>
+    <a href="#features">Features</a> · <a href="#architecture">Architecture</a> · <a href="#getting-started">Getting Started</a> · <a href="#docker-setup">Docker</a> · <a href="#production-deployment">Production</a>
   </p>
 </p>
 
@@ -13,7 +17,7 @@
 
 ## Overview
 
-Cinema Plus is a full-stack cinema management and ticket reservation platform designed with production-grade architecture. It features a FastAPI backend with concurrency-safe seat reservations, a responsive Next.js frontend with a modern dark UI, an interactive theatre layout designer, and comprehensive admin tooling.
+Cinema Plus is a full-stack cinema management and ticket reservation platform designed with enterprise-grade architecture. It features a **FastAPI** backend with concurrency-safe seat reservations, database-level unique constraints, pessimistic locking (`SELECT FOR UPDATE`), a responsive **Next.js 15** frontend with modern dark UI, an interactive theatre layout designer, and full administrative tooling.
 
 ---
 
@@ -22,66 +26,67 @@ Cinema Plus is a full-stack cinema management and ticket reservation platform de
 ### Customer Experience
 - 🎥 **Movie Discovery** — Browse, search, and filter movies by genre, language, and format
 - 🎟️ **Interactive Seat Selection** — Real-time seat map with category-based pricing zones
-- ⏱️ **Reservation System** — 10-minute temporary seat lock with countdown timer
-- 💳 **Checkout & Confirmation** — Two-phase commit booking with reservation-to-booking conversion
-- 🎫 **E-Tickets** — PDF ticket generation with QR codes
-- ⭐ **Reviews & Ratings** — User movie reviews with rating system
-- 👤 **User Profiles** — Account management with booking history
+- ⏱️ **Reservation Engine** — 10-minute temporary seat lock with countdown timer
+- 💳 **Two-Phase Booking** — Atomic booking creation with seat reservation conversion
+- 🎫 **E-Tickets** — Automated PDF ticket generation with verifiable QR codes
+- ⭐ **Reviews & Ratings** — Verified user movie reviews with star ratings
+- 👤 **User Profiles** — Account management, password changes, and booking history
 
 ### Admin Dashboard
-- 📊 **Analytics** — Revenue charts, booking trends, and occupancy statistics
-- 🎬 **Movie CRUD** — Full movie lifecycle management with poster uploads
-- 🏛️ **Theatre & Screen Management** — Multi-theatre support with screen configuration
-- 🪑 **Layout Designer** — Interactive drag-and-drop theatre seating layout editor
-- 📅 **Show Scheduling** — Create and manage show times across screens
-- 💰 **Pricing Engine** — Category-based pricing with dynamic rules and multipliers
-- 🖼️ **Media Library** — Centralized media asset management
-- 📋 **Audit Logs** — Complete action audit trail
-- 🔍 **System Health** — Real-time database and storage health monitoring
+- 📊 **Analytics** — Real-time revenue charts, booking trends, and occupancy rates
+- 🎬 **Movie Lifecycle** — Full movie management with poster uploads and soft-deletion
+- 🏛️ **Theatre & Screens** — Multi-theatre support with customizable screens
+- 🪑 **Layout Designer** — Visual seat layout grid editor with row/category assignments
+- 📅 **Show Scheduling** — Create and manage show times across screens with price multipliers
+- 💰 **Pricing Engine** — Category pricing (Normal / Executive / Premium) with dynamic rules
+- 🖼️ **Media Library** — Centralized media asset management with thumbnail generation
+- 📋 **Audit Logs** — Tamper-evident action audit trail with IP address tracking
+- 🔍 **System Health** — Real-time database and storage health monitoring endpoint (`/health`)
 
-### Technical Highlights
-- 🔒 **Concurrency Control** — Pessimistic locking (SELECT FOR UPDATE) for seat reservations
-- 🔑 **JWT Authentication** — Role-based access control (Admin, Theatre Manager, Staff, Customer)
-- 📡 **RESTful API** — Standardized response envelope with request ID tracking
-- 🗄️ **Database Migrations** — Alembic-managed schema versioning
-- 🎨 **Responsive UI** — Dark-themed, mobile-first Next.js interface with Tailwind CSS
+### Security Highlights
+- 🔒 **Database Integrity** — Database-level unique constraint on `(show_id, seat_name)` in `booked_seats`
+- 🔒 **Concurrency Control** — Row-level pessimistic locking (`SELECT FOR UPDATE`) prevents double-booking
+- 🔑 **JWT Authentication** — Stateless token authentication with role-based access control
+- 🛡️ **Zero Secrets in Code** — All credentials, keys, and origins driven by environment variables
+- 🌐 **Strict CORS** — Environment-configured origins; wildcard-with-credentials prohibited
+- 📑 **Security Headers** — `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`
+- 🛡️ **Upload Safety** — Extension whitelisting, MIME verification, Pillow header analysis, UUID storage keys
 
 ---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                      Next.js Frontend                        │
-│  ┌──────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌─────────────┐ │
-│  │ Auth │ │ Movies │ │ Booking│ │ Admin  │ │ Layout      │ │
-│  │Pages │ │ Pages  │ │ Flow   │ │ Panel  │ │ Designer    │ │
-│  └──┬───┘ └───┬────┘ └───┬────┘ └───┬────┘ └─────┬───────┘ │
-│     └─────────┴──────────┴──────────┴─────────────┘         │
-│                    API Client Layer                           │
-└──────────────────────────┬───────────────────────────────────┘
-                           │ HTTP / REST
-┌──────────────────────────┴───────────────────────────────────┐
-│                     FastAPI Backend                           │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │                    Route Layer                          │  │
-│  │  auth · movies · bookings · reservations · schedule    │  │
-│  │  admin · layouts · reviews · tickets                   │  │
-│  └────────────────────┬───────────────────────────────────┘  │
-│  ┌────────────────────┴───────────────────────────────────┐  │
-│  │                   Service Layer                         │  │
-│  │  Business logic · Validation · Event dispatching       │  │
-│  └────────────────────┬───────────────────────────────────┘  │
-│  ┌────────────────────┴───────────────────────────────────┐  │
-│  │                 Repository Layer                        │  │
-│  │  SQLAlchemy ORM · Query builders · Transactions        │  │
-│  └────────────────────┬───────────────────────────────────┘  │
-└──────────────────────────┬───────────────────────────────────┘
-                           │ SQLAlchemy
-                    ┌──────┴──────┐
-                    │    MySQL    │
-                    │  Database   │
-                    └─────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Next.js 15 Frontend                             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐ │
+│  │   Auth   │ │  Movies  │ │  Booking │ │  Admin   │ │   Layout     │ │
+│  │  Pages   │ │  Pages   │ │   Flow   │ │  Panel   │ │  Designer    │ │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └──────┬───────┘ │
+│       └────────────┴────────────┴────────────┴──────────────┘         │
+│                        API Client Layer                                │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ HTTP / REST (JWT Bearer)
+┌───────────────────────────────────┴────────────────────────────────────┐
+│                         FastAPI Backend                                │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │                        Route Layer                               │  │
+│  │  auth · movies · bookings · reservations · schedule · admin      │  │
+│  └────────────────────────────────┬─────────────────────────────────┘  │
+│  ┌────────────────────────────────┴─────────────────────────────────┐  │
+│  │                       Service Layer                              │  │
+│  │  Business logic · Atomic booking transactions · Event dispatcher │  │
+│  └────────────────────────────────┬─────────────────────────────────┘  │
+│  ┌────────────────────────────────┴─────────────────────────────────┐  │
+│  │                      Repository Layer                            │  │
+│  │  SQLAlchemy ORM · Query builders · Transaction staging & flush   │  │
+│  └────────────────────────────────┬─────────────────────────────────┘  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ SQLAlchemy 2.0 (PyMySQL)
+                             ┌──────┴──────┐
+                             │   MySQL 8   │
+                             │  Database   │
+                             └─────────────┘
 ```
 
 ---
@@ -89,15 +94,24 @@ Cinema Plus is a full-stack cinema management and ticket reservation platform de
 ## Technology Stack
 
 | Layer | Technology |
-|-------|------------|
-| **Frontend** | Next.js 15, React 19, TypeScript, Tailwind CSS |
-| **State Management** | Zustand, TanStack React Query |
-| **Backend** | FastAPI, Python, Uvicorn |
-| **Database** | MySQL, SQLAlchemy ORM |
-| **Migrations** | Alembic |
-| **Authentication** | JWT (python-jose), Passlib (bcrypt) |
-| **Ticket Generation** | ReportLab, qrcode, Pillow |
-| **Linting** | ESLint, TypeScript strict mode |
+|---|---|
+| **Frontend** | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS |
+| **Frontend State** | Zustand 5, TanStack React Query 5 |
+| **Backend** | FastAPI 0.115+, Python 3.11+, Uvicorn |
+| **Database** | MySQL 8.0, SQLAlchemy 2.0 ORM |
+| **Migrations** | Alembic 1.13+ |
+| **Authentication** | JWT (`python-jose`), `bcrypt` password hashing |
+| **Ticket Engine** | ReportLab, `qrcode`, Pillow |
+| **Containerization** | Docker, Docker Compose |
+
+---
+
+## Requirements
+
+- **Python** 3.10+ (Python 3.11 recommended)
+- **Node.js** 18+ (Node.js 20 LTS recommended)
+- **MySQL** 8.0+
+- **Docker & Docker Compose** (optional, for containerized deployment)
 
 ---
 
@@ -106,160 +120,280 @@ Cinema Plus is a full-stack cinema management and ticket reservation platform de
 ```
 cinema-plus/
 ├── backend/                # FastAPI Backend
-│   ├── main.py             # Application entry point & middleware
-│   ├── database.py         # SQLAlchemy engine & session config
-│   ├── auth/               # JWT security & password hashing
-│   ├── core/               # App configuration
-│   ├── exceptions/         # Custom exception hierarchy
+│   ├── main.py             # App entry point, lifespan, security headers & middleware
+│   ├── database.py         # SQLAlchemy engine, pool configuration, connectivity check
+│   ├── auth/               # JWT token generation & bcrypt hashing
+│   ├── core/               # App configuration & environment validation
+│   ├── exceptions/         # Custom HTTP exception hierarchy
 │   ├── models/             # SQLAlchemy ORM models
-│   ├── repositories/       # Data access layer
+│   ├── repositories/       # Data access layer (staged transactions)
 │   ├── routes/             # API endpoint routers
-│   ├── schemas/            # Pydantic request/response schemas
+│   ├── schemas/            # Pydantic request/response validation schemas
 │   ├── services/           # Business logic layer
-│   ├── storage/            # File storage abstraction
-│   └── utils/              # Utilities (cache, email, pricing, tickets)
+│   └── utils/              # Cache, email, pricing engine, ticket PDF generator
 ├── src/                    # Next.js Frontend
-│   ├── app/                # App Router pages & layouts
+│   ├── app/                # Next.js App Router pages & layouts
 │   ├── components/         # Reusable UI components
-│   ├── hooks/              # Custom React hooks
-│   ├── lib/                # API client, auth tokens, utilities
+│   ├── hooks/              # Custom React hooks (useAuth, useMovies, etc.)
+│   ├── lib/                # API client, auth token management
 │   ├── stores/             # Zustand state stores
-│   ├── types/              # TypeScript type definitions
-│   └── middleware.ts       # Auth middleware
-├── docs/                   # Project documentation
-├── scripts/                # Database seeding & utilities
-├── alembic/                # Database migration files
-├── uploads/                # User-uploaded media assets
-├── legacy/                 # Archived legacy NiceGUI frontend
-└── .github/                # Issue & PR templates
+│   └── types/              # TypeScript domain types
+├── alembic/                # Database schema migrations
+├── scripts/                # Database seed script & benchmarks
+├── uploads/                # Local user media storage (volume-mountable)
+├── Dockerfile              # Production Backend Docker image
+├── Dockerfile.frontend     # Production Frontend Docker image
+├── docker-compose.yml      # Complete local/staging stack with MySQL
+├── Procfile                # Generic platform process file (Render/Railway)
+└── requirements.txt        # Backend dependencies
 ```
 
 ---
 
-## Getting Started
+## Environment Variables
 
-### Prerequisites
+### Backend (`.env`)
 
-- **Python** 3.10+
-- **Node.js** 18+
-- **MySQL** 8.0+
-- **npm** or **pnpm**
+| Variable | Description | Default | Required in Prod |
+|---|---|---|---|
+| `APP_ENV` | Application environment (`development` / `production`) | `development` | Yes |
+| `DB_HOST` | MySQL database host | `localhost` | Yes |
+| `DB_PORT` | MySQL database port | `3306` | Yes |
+| `DB_USER` | MySQL database user | `root` | Yes |
+| `DB_PASSWORD` | MySQL database password | — | **Yes** |
+| `DB_NAME` | MySQL database name | `MovieTicketBooking` | Yes |
+| `SECRET_KEY` | JWT signing secret (min 32 chars) | — | **Yes** |
+| `ALGORITHM` | JWT algorithm | `HS256` | No |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Token expiry duration | `1440` (24h) | No |
+| `ADMIN_PASSWORD` | Initial admin account password | — | **Yes** |
+| `ADMIN_EMAIL` | Initial admin email | `admin@cinemaplus.local` | No |
+| `ALLOWED_ORIGINS` | Comma-separated CORS allowed origins | `http://localhost:3005` | **Yes** |
+| `FRONTEND_URL` | Frontend application URL | `http://localhost:3005` | Yes |
+| `RESERVATION_TIMEOUT_MINUTES`| Seat reservation lock duration | `10` | No |
+| `ENABLE_DOCS` | Enable `/docs` in production | `false` | No |
+| `SMTP_HOST` | SMTP server host (optional) | `smtp.gmail.com` | No |
+| `SMTP_PORT` | SMTP server port | `587` | No |
+| `SMTP_USER` | SMTP username | — | No |
+| `SMTP_PASS` | SMTP password | — | No |
+| `SMTP_FROM` | Outgoing email address | `no-reply@cinemaplus.com` | No |
 
-### 1. Clone the Repository
+### Frontend (`.env.local`)
+
+| Variable | Description | Example |
+|---|---|---|
+| `NEXT_PUBLIC_API_BASE_URL` | Public backend API URL | `http://localhost:8001` or `https://api.yourdomain.com` |
+| `REACT_PROFILE` | Enable React profiling in prod (slower) | `false` |
+
+---
+
+## Local Development Setup
+
+### 1. Clone & Configure
 
 ```bash
-git clone https://github.com/your-username/cinema-plus.git
-cd cinema-plus
-```
+git clone <repository-url>
+cd Cinema_Plus
 
-### 2. Database Setup
-
-```sql
-CREATE DATABASE MovieTicketBooking;
-```
-
-### 3. Environment Variables
-
-```bash
+# Configure Backend environment
 cp .env.example .env
+
+# Configure Frontend environment
 cp .env.local.example .env.local
 ```
 
-Edit `.env` with your MySQL credentials and JWT secret.
-
-### 4. Backend Setup
+### 2. Backend Setup
 
 ```bash
+# Create and activate Python virtual environment
 python -m venv .venv
 
-# Windows
+# Windows:
 .venv\Scripts\activate
+# Linux / macOS:
+# source .venv/bin/activate
 
-# macOS/Linux
-source .venv/bin/activate
-
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 5. Database Migration & Seeding
+### 3. Database Initialization & Migration
+
+Ensure MySQL is running and create the database:
+
+```sql
+CREATE DATABASE MovieTicketBooking CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+Run Alembic migrations:
 
 ```bash
-# Run migrations
 alembic upgrade head
+```
 
-# Seed initial data
+Seed initial sample data (idempotent):
+
+```bash
 python scripts/seed_db.py
 ```
 
-**Default accounts:**
-| Role | Username | Password |
-|------|----------|----------|
-| Admin | `admin` | `admin123` |
-| Customer | `testuser` | `password123` |
-
-### 6. Start the Backend
+### 4. Start Backend Server
 
 ```bash
+# Development mode:
 uvicorn backend.main:app --reload --port 8001
+
+# Production mode (single worker):
+uvicorn backend.main:app --host 0.0.0.0 --port 8001 --workers 1
 ```
 
-API documentation: [http://localhost:8001/docs](http://localhost:8001/docs)
+Backend is live at: [http://localhost:8001](http://localhost:8001)  
+Interactive API Documentation: [http://localhost:8001/docs](http://localhost:8001/docs)
 
-### 7. Frontend Setup
+### 5. Frontend Setup
 
 ```bash
 npm install
 npm run dev
 ```
 
-Frontend: [http://localhost:3000](http://localhost:3000)
+Frontend is live at: [http://localhost:3005](http://localhost:3005)
 
 ---
 
-## Completed Milestones
+## Docker Setup (Recommended for Full Stack)
 
-| Phase | Description | Status |
-|-------|-------------|--------|
-| **Phase 1** | Platform Stabilization — CRUD, validation, error handling, health monitoring | ✅ Complete |
-| **Phase 2** | Architecture Cleanup — Service/repository pattern, exception hierarchy, audit logging | ✅ Complete |
-| **Phase 3** | Reservation Engine — Concurrency control, two-phase booking, event system | ✅ Complete |
-| **Phase 3.5** | Next.js Migration — Complete frontend rewrite from NiceGUI to Next.js | ✅ Complete |
-| **Phase 3.6** | Repository Consolidation — Cleanup, documentation, GitHub preparation | ✅ Complete |
+Run the entire application stack (MySQL 8, FastAPI backend, Next.js frontend) with a single command:
 
----
+```bash
+# 1. Configure environment
+cp .env.example .env
 
-## Roadmap
+# 2. Build and start containers
+docker compose up --build -d
 
-See [ROADMAP.md](docs/ROADMAP.md) for detailed upcoming features.
+# 3. Apply migrations inside backend container
+docker compose exec backend alembic upgrade head
 
-**Next planned phases:**
-- **Phase 4** — Payment Integration & Production Hardening
-- **Phase 5** — Real-time Features (WebSocket seat updates)
-- **Phase 6** — Mobile Optimization & PWA
-- **Phase 7** — Multi-tenant Theatre Network
+# 4. (Optional) Seed sample data
+docker compose exec backend python scripts/seed_db.py
+```
 
----
+### Docker Services:
+- **Frontend**: [http://localhost:3005](http://localhost:3005)
+- **Backend API**: [http://localhost:8001](http://localhost:8001)
+- **MySQL**: Internal network `mysql:3306`
 
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [API Contract](docs/API_CONTRACT.md) | Complete REST API specification |
-| [Architecture](docs/ARCHITECTURE.md) | System architecture overview |
-| [Reservation Architecture](docs/RESERVATION_ARCHITECTURE.md) | Concurrency control design |
-| [Theatre Layout Architecture](docs/THEATRE_LAYOUT_ARCHITECTURE.md) | Layout designer system design |
-| [Development Guide](docs/DEVELOPMENT.md) | Local development setup |
-| [Contributing](CONTRIBUTING.md) | Contribution guidelines |
-| [Changelog](CHANGELOG.md) | Version history |
+To stop:
+```bash
+docker compose down
+```
 
 ---
 
-## Contributing
+## Production Deployment
 
-Contributions are welcome! Please read the [Contributing Guide](CONTRIBUTING.md) before submitting a pull request.
+### Option A: Render / Railway (Docker Deployment)
+
+1. **Database**: Provision a managed MySQL database instance (e.g. PlanetScale, AWS RDS, or Render MySQL).
+2. **Backend**:
+   - Create a Web Service from the repo using Docker runtime (`Dockerfile`).
+   - Set environment variables:
+     - `APP_ENV=production`
+     - `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
+     - `SECRET_KEY` (generate with `python -c "import secrets; print(secrets.token_hex(32))"`)
+     - `ADMIN_PASSWORD` (strong password)
+     - `ALLOWED_ORIGINS=https://your-frontend-domain.com`
+     - `FRONTEND_URL=https://your-frontend-domain.com`
+   - **Persistent Disk**: Attach a persistent disk mounted at `/app/uploads` to preserve uploaded posters and media.
+3. **Frontend**:
+   - Create a Web Service using `Dockerfile.frontend` (or deploy to Vercel).
+   - Set build argument / environment variable:
+     - `NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.com`
+4. **Post-Deployment Migration**:
+   - Run `alembic upgrade head` in the backend container console.
+
+### Option B: VPS (Ubuntu / Debian with Docker Compose)
+
+```bash
+# Clone repo on server
+git clone <repo-url> /opt/cinemaplus
+cd /opt/cinemaplus
+
+# Create production .env with real credentials
+cp .env.example .env
+nano .env
+
+# Start with Docker Compose
+docker compose -f docker-compose.yml up -d --build
+
+# Run database migrations
+docker compose exec backend alembic upgrade head
+```
+
+---
+
+## Media Storage
+
+- Media files (posters, banners, generated QR codes) are stored under `uploads/media/`.
+- In containerized deployments, **a persistent volume must be attached at `/app/uploads/`**.
+- *Ephemeral cloud hosting without persistent disks will lose user-uploaded posters upon container restart.*
+
+---
+
+## SMTP Email Configuration
+
+Email confirmations are **optional**. If `SMTP_USER` and `SMTP_PASS` are omitted, email sending is skipped gracefully without interrupting bookings.
+
+To enable booking confirmation emails with PDF attachments:
+```ini
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your_email@gmail.com
+SMTP_PASS=your_app_specific_password
+SMTP_FROM=no-reply@cinemaplus.com
+MAIL_STARTTLS=True
+MAIL_SSL_TLS=False
+```
+
+---
+
+## Admin Setup
+
+The initial administrator account is automatically bootstrapped on first startup using:
+- **Username**: `admin`
+- **Password**: Set via `ADMIN_PASSWORD` environment variable
+- **Email**: Set via `ADMIN_EMAIL` environment variable
+
+*In production (`APP_ENV=production`), the application will refuse to start if `ADMIN_PASSWORD` is missing or insecure.*
+
+---
+
+## Testing
+
+```bash
+# Backend unit & integration tests
+pytest backend/tests -v
+
+# Frontend TypeScript type verification
+npm run typecheck
+
+# Frontend unit tests
+npm run test:unit
+
+# Next.js production build verification
+npm run build
+```
+
+---
+
+## Known Production Limitations
+
+1. **In-Memory Cache & Single Worker**: The current cache (`backend/utils/cache.py`) is an in-memory dictionary. Backend containers should run with `--workers 1`. For horizontal multi-worker scaling, replace `InMemoryCache` with a Redis backend.
+2. **Local Media Storage**: Uploaded posters require a persistent volume mount. For multi-server or serverless architectures, configure S3/Cloudinary.
+3. **Database Driver**: SQLAlchemy connects to MySQL using `pymysql`. Ensure MySQL connection pooling (`pool_size=10, max_overflow=20`) is tuned for your server's RAM.
 
 ---
 
 ## License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License.

@@ -1,0 +1,9 @@
+{
+  "timestamp": "2026-06-27T12:10:32.032Z",
+  "tree_max_depth": 8,
+  "total_dom_elements": 81,
+  "leaf_nodes": 53,
+  "estimated_hydration_ms": "45.0",
+  "dom_interactive_ms": "N/A",
+  "load_time_ms": "N/A"
+}

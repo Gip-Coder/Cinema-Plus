@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import secrets
-from typing import List
+from typing import List, cast
 from backend.models.reservation import ReservationGroup, SeatReservation
 from backend.models.booking import Booking, BookedSeat
 from backend.models.models import Show
@@ -26,7 +26,7 @@ class ReservationService:
         """
         On-demand cleanup of expired active reservations.
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         expired_groups = (
             self.db.query(ReservationGroup)
             .filter(ReservationGroup.status == "active")
@@ -34,13 +34,13 @@ class ReservationService:
             .all()
         )
         for group in expired_groups:
-            group.status = "expired"
+            group.status = "expired"  # type: ignore
             for seat in group.reserved_seats:
-                seat.status = "expired"
+                seat.status = "expired"  # type: ignore
             
             # Dispatch event
             seats = [s.seat_id for s in group.reserved_seats]
-            event = ReservationEvent(group.id, group.user_id, group.show_id, seats)
+            event = ReservationEvent(cast(int, group.id), cast(int, group.user_id), cast(int, group.show_id), seats)
             dispatcher.dispatch(self.db, "ReservationExpired", event)
             
         if expired_groups:
@@ -61,13 +61,13 @@ class ReservationService:
 
         # 4. Create reservation session
         token = secrets.token_hex(16)
-        expires_at = datetime.utcnow() + timedelta(minutes=settings.RESERVATION_TIMEOUT_MINUTES)
+        expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=settings.RESERVATION_TIMEOUT_MINUTES)
         
         group = ReservationGroup(
             user_id=user_id,
             show_id=show_id,
             reservation_token=token,
-            reserved_at=datetime.utcnow(),
+            reserved_at=datetime.now(timezone.utc).replace(tzinfo=None),
             expires_at=expires_at,
             status="active"
         )
@@ -88,7 +88,7 @@ class ReservationService:
         self.db.refresh(group)
 
         # 6. Dispatch event
-        event = ReservationEvent(group.id, user_id, show_id, seat_names)
+        event = ReservationEvent(cast(int, group.id), user_id, show_id, seat_names)
         dispatcher.dispatch(self.db, "ReservationCreated", event)
 
         return group
@@ -111,16 +111,16 @@ class ReservationService:
             return group
 
         # 4. Cancel
-        group.status = "cancelled"
+        group.status = "cancelled"  # type: ignore
         for seat in group.reserved_seats:
-            seat.status = "cancelled"
+            seat.status = "cancelled"  # type: ignore
         
         self.db.commit()
         self.db.refresh(group)
 
         # 5. Dispatch event
         seats = [s.seat_id for s in group.reserved_seats]
-        event = ReservationEvent(group.id, user_id, group.show_id, seats)
+        event = ReservationEvent(cast(int, group.id), user_id, cast(int, group.show_id), seats)
         dispatcher.dispatch(self.db, "ReservationCancelled", event)
 
         return group
@@ -152,16 +152,16 @@ class ReservationService:
             raise ReservationExpiredException(group_id)
 
         # 4. Check if group expired
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         if group.expires_at <= now or group.status == "expired":
-            group.status = "expired"
+            group.status = "expired"  # type: ignore
             for seat in group.reserved_seats:
-                seat.status = "expired"
+                seat.status = "expired"  # type: ignore
             self.db.commit()
             
             # Dispatch expired event
             seats = [s.seat_id for s in group.reserved_seats]
-            event = ReservationEvent(group.id, user_id, group.show_id, seats)
+            event = ReservationEvent(cast(int, group.id), user_id, cast(int, group.show_id), seats)
             dispatcher.dispatch(self.db, "ReservationExpired", event)
             
             raise ReservationExpiredException(group_id)
@@ -169,13 +169,13 @@ class ReservationService:
         # 5. Get seat categories and prices
         show = group.show
         if not show:
-            raise ShowNotFoundException(group.show_id)
+            raise ShowNotFoundException(cast(int, group.show_id))
 
         total_amount = 0.0
         seats_payload = []
         for seat_res in group.reserved_seats:
-            category = get_seat_category_for_show(self.db, group.show_id, seat_res.seat_id)
-            price_details = calculate_dynamic_price(self.db, group.show_id, category)
+            category = get_seat_category_for_show(self.db, cast(int, group.show_id), seat_res.seat_id)
+            price_details = calculate_dynamic_price(self.db, cast(int, group.show_id), category)
             price = price_details["final_price"]
             total_amount += price
             seats_payload.append({
@@ -207,9 +207,9 @@ class ReservationService:
             self.db.add(booked_seat)
 
         # 8. Mark reservation as converted
-        group.status = "converted"
+        group.status = "converted"  # type: ignore
         for seat_res in group.reserved_seats:
-            seat_res.status = "converted"
+            seat_res.status = "converted"  # type: ignore
 
         # Commit transaction
         self.db.commit()
@@ -217,10 +217,10 @@ class ReservationService:
 
         # 9. Dispatch events
         seats_names = [s["seat_name"] for s in seats_payload]
-        res_event = ReservationEvent(group.id, user_id, group.show_id, seats_names)
+        res_event = ReservationEvent(cast(int, group.id), user_id, cast(int, group.show_id), seats_names)
         dispatcher.dispatch(self.db, "ReservationConfirmed", res_event)
 
-        booking_event = BookingEvent(booking.id, user_id, group.show_id, seats_names, booking.total_amount)
+        booking_event = BookingEvent(cast(int, booking.id), user_id, cast(int, group.show_id), seats_names, cast(float, booking.total_amount))
         dispatcher.dispatch(self.db, "BookingCreated", booking_event)
 
         return booking

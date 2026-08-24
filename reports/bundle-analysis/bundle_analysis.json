@@ -1,0 +1,321 @@
+{
+  "timestamp": "2026-06-27T12:10:29.246Z",
+  "total_js_kb": "1493.1",
+  "total_js_gzip_kb": "459.2",
+  "total_js_brotli_kb": "361.4",
+  "total_css_kb": "54.5",
+  "total_css_gzip_kb": "9.8",
+  "total_css_brotli_kb": "8.0",
+  "duplicate_packages_count": 33,
+  "duplicate_packages": [
+    {
+      "name": "lru-cache",
+      "versions": [
+        "10.4.3",
+        "5.1.1",
+        "7.18.3"
+      ]
+    },
+    {
+      "name": "json5",
+      "versions": [
+        "2.2.3",
+        "1.0.2"
+      ]
+    },
+    {
+      "name": "semver",
+      "versions": [
+        "6.3.1",
+        "7.8.4"
+      ]
+    },
+    {
+      "name": "@emnapi/runtime",
+      "versions": [
+        "1.11.1",
+        "1.10.0"
+      ]
+    },
+    {
+      "name": "eslint-visitor-keys",
+      "versions": [
+        "3.4.3",
+        "5.0.1",
+        "4.2.1"
+      ]
+    },
+    {
+      "name": "ansi-regex",
+      "versions": [
+        "6.2.2",
+        "5.0.1"
+      ]
+    },
+    {
+      "name": "ansi-styles",
+      "versions": [
+        "6.2.3",
+        "4.3.0",
+        "5.2.0"
+      ]
+    },
+    {
+      "name": "string-width",
+      "versions": [
+        "5.1.2",
+        "4.2.3"
+      ]
+    },
+    {
+      "name": "strip-ansi",
+      "versions": [
+        "7.2.0",
+        "6.0.1"
+      ]
+    },
+    {
+      "name": "wrap-ansi",
+      "versions": [
+        "8.1.0",
+        "7.0.0"
+      ]
+    },
+    {
+      "name": "fast-glob",
+      "versions": [
+        "3.3.3",
+        "3.3.1"
+      ]
+    },
+    {
+      "name": "glob-parent",
+      "versions": [
+        "5.1.2",
+        "6.0.2"
+      ]
+    },
+    {
+      "name": "@opentelemetry/semantic-conventions",
+      "versions": [
+        "1.28.0",
+        "1.41.1"
+      ]
+    },
+    {
+      "name": "brace-expansion",
+      "versions": [
+        "2.1.1",
+        "5.0.6",
+        "1.1.15"
+      ]
+    },
+    {
+      "name": "minimatch",
+      "versions": [
+        "9.0.9",
+        "10.2.5",
+        "3.1.5"
+      ]
+    },
+    {
+      "name": "aria-query",
+      "versions": [
+        "5.3.0",
+        "5.3.2"
+      ]
+    },
+    {
+      "name": "dom-accessibility-api",
+      "versions": [
+        "0.6.3",
+        "0.5.16"
+      ]
+    },
+    {
+      "name": "ignore",
+      "versions": [
+        "7.0.5",
+        "5.3.2"
+      ]
+    },
+    {
+      "name": "balanced-match",
+      "versions": [
+        "4.0.4",
+        "1.0.2"
+      ]
+    },
+    {
+      "name": "acorn",
+      "versions": [
+        "8.17.0",
+        "7.4.1"
+      ]
+    },
+    {
+      "name": "commander",
+      "versions": [
+        "4.1.1",
+        "15.0.0",
+        "7.2.0"
+      ]
+    },
+    {
+      "name": "rrweb-cssom",
+      "versions": [
+        "0.8.0",
+        "0.7.1"
+      ]
+    },
+    {
+      "name": "debug",
+      "versions": [
+        "4.4.3",
+        "3.2.7"
+      ]
+    },
+    {
+      "name": "devtools-protocol",
+      "versions": [
+        "0.0.1507524",
+        "0.0.1608973"
+      ]
+    },
+    {
+      "name": "emoji-regex",
+      "versions": [
+        "9.2.2",
+        "8.0.0"
+      ]
+    },
+    {
+      "name": "signal-exit",
+      "versions": [
+        "4.1.0",
+        "3.0.7"
+      ]
+    },
+    {
+      "name": "fsevents",
+      "versions": [
+        "2.3.3",
+        "2.3.2"
+      ]
+    },
+    {
+      "name": "ws",
+      "versions": [
+        "7.5.11",
+        "8.21.0"
+      ]
+    },
+    {
+      "name": "postcss",
+      "versions": [
+        "8.4.31",
+        "8.5.15"
+      ]
+    },
+    {
+      "name": "picomatch",
+      "versions": [
+        "2.3.2",
+        "4.0.4"
+      ]
+    },
+    {
+      "name": "resolve",
+      "versions": [
+        "1.22.12",
+        "2.0.0-next.7"
+      ]
+    },
+    {
+      "name": "react-is",
+      "versions": [
+        "17.0.2",
+        "16.13.1"
+      ]
+    },
+    {
+      "name": "tldts-core",
+      "versions": [
+        "7.4.4",
+        "6.1.86"
+      ]
+    }
+  ],
+  "largest_chunks": [
+    {
+      "name": "framework-610e2e58afe74775.js",
+      "type": "js",
+      "size": 381166,
+      "gzip": 119009,
+      "brotli": 65055
+    },
+    {
+      "name": "493-dbd4607ff9cca169.js",
+      "type": "js",
+      "size": 173381,
+      "gzip": 46335,
+      "brotli": 37975
+    },
+    {
+      "name": "4bd1b696-c023c6e3521b1417.js",
+      "type": "js",
+      "size": 173019,
+      "gzip": 54358,
+      "brotli": 46749
+    },
+    {
+      "name": "main-3b5e5db59cff96d2.js",
+      "type": "js",
+      "size": 123171,
+      "gzip": 35468,
+      "brotli": 30371
+    },
+    {
+      "name": "polyfills-42372ed130431b0a.js",
+      "type": "js",
+      "size": 112594,
+      "gzip": 39627,
+      "brotli": 35158
+    },
+    {
+      "name": "c17842db9bc454e9.css",
+      "type": "css",
+      "size": 55826,
+      "gzip": 10011,
+      "brotli": 8198
+    },
+    {
+      "name": "page-b175a5ba1c2a4513.js",
+      "type": "js",
+      "size": 34741,
+      "gzip": 8800,
+      "brotli": 7732
+    },
+    {
+      "name": "page-61f059c8b05543ee.js",
+      "type": "js",
+      "size": 32331,
+      "gzip": 9164,
+      "brotli": 8070
+    },
+    {
+      "name": "719-ad44d31d527e9d51.js",
+      "type": "js",
+      "size": 32278,
+      "gzip": 10244,
+      "brotli": 9223
+    },
+    {
+      "name": "page-de2cb70ec57f5d8a.js",
+      "type": "js",
+      "size": 29645,
+      "gzip": 9054,
+      "brotli": 7947
+    }
+  ]
+}

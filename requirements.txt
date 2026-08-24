@@ -1,26 +1,43 @@
-# ─── Backend Core ────────────────────────────────────────
-fastapi
-uvicorn[standard]
-sqlalchemy
-pymysql
-python-dotenv
-python-multipart
-psutil
+# ─── Backend Core ────────────────────────────────────────────────────────────
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+sqlalchemy>=2.0.0
+pymysql>=1.1.0
+python-dotenv>=1.0.0
+python-multipart>=0.0.9
+psutil>=5.9.0
 
+# ─── HTTP Client (used by media_processor for external URL validation) ───────
+httpx>=0.27.0
 
-# ─── Authentication ──────────────────────────────────────
-passlib[bcrypt]
-python-jose[cryptography]
+# ─── Production WSGI/ASGI Process Manager ───────────────────────────────────
+# Used in production (see Dockerfile CMD). Not needed in pure uvicorn deployments.
+gunicorn>=22.0.0
 
-# ─── Ticket Generation ───────────────────────────────────
-reportlab
-qrcode
-Pillow
+# ─── Authentication ──────────────────────────────────────────────────────────
+# passlib[bcrypt] installs bcrypt as a dependency. Both are declared explicitly
+# to make the dependency graph clear and ensure clean installs.
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.0.0
+python-jose[cryptography]>=3.3.0
 
-# ─── Async & Email ───────────────────────────────────────
-aiofiles
-fastapi-mail
-email-validator
+# ─── Ticket Generation ───────────────────────────────────────────────────────
+reportlab>=4.0.0
+qrcode>=7.4.2
+Pillow>=10.0.0
 
-# ─── Database Migrations ────────────────────────────────
-alembic
+# ─── Async & Email ───────────────────────────────────────────────────────────
+aiofiles>=23.0.0
+fastapi-mail>=1.4.0
+email-validator>=2.1.0
+
+# ─── Database Migrations ─────────────────────────────────────────────────────
+alembic>=1.13.0
+
+# ─── Testing & Quality ───────────────────────────────────────────────────────
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+radon>=6.0.0
+bandit>=1.7.0
+yappi>=1.6.0
