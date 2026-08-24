@@ -92,6 +92,22 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# ── Auto Migrations ───────────────────────────────────────────────────────────
+def _run_migrations() -> None:
+    """Automatically apply Alembic database migrations on startup if possible."""
+    try:
+        from alembic.config import Config
+        from alembic import command
+
+        ini_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
+        if os.path.exists(ini_path):
+            alembic_cfg = Config(ini_path)
+            command.upgrade(alembic_cfg, "head")
+            print("[MIGRATIONS] Database schema verified and up-to-date (head).")
+    except Exception as e:
+        print(f"[MIGRATIONS INFO] Automatic migration check: {e}", file=sys.stderr)
+
+
 # ── Admin bootstrap ────────────────────────────────────────────────────────────
 def _bootstrap_admin(db: Session) -> None:
     """Create initial admin user if one does not already exist.
@@ -100,7 +116,16 @@ def _bootstrap_admin(db: Session) -> None:
     In production, the application will refuse to start if ADMIN_PASSWORD is not set.
     In development, a warning is printed and a temporary insecure password is used.
     """
-    existing_admin = db.query(models.User).filter(models.User.username == "admin").first()
+    try:
+        existing_admin = db.query(models.User).filter(models.User.username == "admin").first()
+    except Exception as e:
+        print(
+            f"[BOOTSTRAP INFO] Users table not ready yet ({e}). "
+            "Admin bootstrap will be skipped until migrations are applied.",
+            file=sys.stderr,
+        )
+        return
+
     if existing_admin:
         return  # Admin already exists — do not touch it
 
@@ -141,14 +166,17 @@ def _bootstrap_admin(db: Session) -> None:
 # ── Lifespan (replaces deprecated @app.on_event) ──────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    # Validate production config before accepting any traffic
+    # 1. Validate production config before accepting any traffic
     try:
         settings.validate_production_config()
     except RuntimeError as e:
         print(f"\n{e}\n", file=sys.stderr)
         sys.exit(1)
 
-    # Bootstrap admin account
+    # 2. Automatically apply schema migrations on startup
+    _run_migrations()
+
+    # 3. Bootstrap admin account
     db = SessionLocal()
     try:
         _bootstrap_admin(db)

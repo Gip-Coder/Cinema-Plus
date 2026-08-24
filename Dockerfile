@@ -56,4 +56,4 @@ EXPOSE 8001
 # - No --reload (development only)
 # - Binds to 0.0.0.0 so the container port is reachable
 # - PORT env var allows deployment platforms to override the port
-CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8001} --workers 1"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8001} --workers 1"]
