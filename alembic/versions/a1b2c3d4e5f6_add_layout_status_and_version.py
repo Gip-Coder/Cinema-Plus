@@ -18,8 +18,14 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('theatre_layouts', sa.Column('status', sa.String(length=20), nullable=True))
-    op.add_column('theatre_layouts', sa.Column('version', sa.Integer(), nullable=True))
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = [col['name'] for col in inspector.get_columns('theatre_layouts')]
+
+    if 'status' not in columns:
+        op.add_column('theatre_layouts', sa.Column('status', sa.String(length=20), nullable=True))
+    if 'version' not in columns:
+        op.add_column('theatre_layouts', sa.Column('version', sa.Integer(), nullable=True))
 
     # Backfill from existing is_published flag
     op.execute(
@@ -29,14 +35,27 @@ def upgrade() -> None:
         )
     )
 
-    op.alter_column('theatre_layouts', 'status', nullable=False, server_default='draft')
-    op.alter_column('theatre_layouts', 'version', nullable=False, server_default='1')
-    op.create_index(op.f('ix_theatre_layouts_status'), 'theatre_layouts', ['status'], unique=False)
-    op.create_index(op.f('ix_theatre_layouts_version'), 'theatre_layouts', ['version'], unique=False)
+    op.alter_column('theatre_layouts', 'status', existing_type=sa.String(length=20), nullable=False, server_default='draft')
+    op.alter_column('theatre_layouts', 'version', existing_type=sa.Integer(), nullable=False, server_default='1')
+
+    indexes = [idx['name'] for idx in inspector.get_indexes('theatre_layouts')]
+    if 'ix_theatre_layouts_status' not in indexes:
+        op.create_index(op.f('ix_theatre_layouts_status'), 'theatre_layouts', ['status'], unique=False)
+    if 'ix_theatre_layouts_version' not in indexes:
+        op.create_index(op.f('ix_theatre_layouts_version'), 'theatre_layouts', ['version'], unique=False)
 
 
 def downgrade() -> None:
-    op.drop_index(op.f('ix_theatre_layouts_version'), table_name='theatre_layouts')
-    op.drop_index(op.f('ix_theatre_layouts_status'), table_name='theatre_layouts')
-    op.drop_column('theatre_layouts', 'version')
-    op.drop_column('theatre_layouts', 'status')
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    indexes = [idx['name'] for idx in inspector.get_indexes('theatre_layouts')]
+    if 'ix_theatre_layouts_version' in indexes:
+        op.drop_index(op.f('ix_theatre_layouts_version'), table_name='theatre_layouts')
+    if 'ix_theatre_layouts_status' in indexes:
+        op.drop_index(op.f('ix_theatre_layouts_status'), table_name='theatre_layouts')
+
+    columns = [col['name'] for col in inspector.get_columns('theatre_layouts')]
+    if 'version' in columns:
+        op.drop_column('theatre_layouts', 'version')
+    if 'status' in columns:
+        op.drop_column('theatre_layouts', 'status')
