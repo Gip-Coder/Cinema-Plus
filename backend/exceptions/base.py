@@ -11,7 +11,7 @@ class NotFoundException(CinemaPlusException):
 
 class ValidationException(CinemaPlusException):
     def __init__(self, detail: str = "Validation failed"):
-        super().__init__(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
+        super().__init__(status_code=getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", 422), detail=detail)
 
 class BadRequestException(CinemaPlusException):
     def __init__(self, detail: str = "Bad request"):

@@ -22,7 +22,7 @@ def test_register_and_login(client):
     assert response2.status_code in (
         status.HTTP_400_BAD_REQUEST,
         status.HTTP_409_CONFLICT,
-        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", 422),
     )
 
     # Test Login with Invalid Credentials
