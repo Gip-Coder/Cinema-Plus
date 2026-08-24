@@ -26,6 +26,9 @@ ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 # Configure Next.js standalone output for optimal Docker image size
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Ensure public directory exists even if empty
+RUN mkdir -p public
+
 RUN npm run build
 
 
