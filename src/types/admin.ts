@@ -138,23 +138,6 @@ export interface PricingRuleCreate {
 
 export type PricingRuleUpdate = Partial<PricingRuleCreate>;
 
-// ─── Media Assets ───────────────────────────────────────────────────────────
-export interface MediaAsset {
-  id: number;
-  filename: string;
-  storage_provider: string;
-  storage_key: string | null;
-  public_url: string | null;
-  mime_type: string;
-  size_bytes: number;
-  asset_type: string;
-  thumbnail_url: string | null;
-  medium_url: string | null;
-  source_type: string;
-  original_source_url: string | null;
-  created_at: string;
-}
-
 // ─── Admin Stats ────────────────────────────────────────────────────────────
 export interface AdminStats {
   total_movies: number;

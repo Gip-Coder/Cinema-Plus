@@ -1,11 +1,10 @@
-from fastapi import APIRouter, Depends, status, UploadFile, File, Form, Request
+from fastapi import APIRouter, Depends, status, Request
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List
 from backend.database import get_db
 from backend.auth.security import get_current_user, get_current_admin_user
 from backend.exceptions.base import PermissionDeniedException
 from backend.services.theatre_service import TheatreService
-from backend.services.media_service import MediaService
 from backend.services.admin_service import AdminService
 from backend.utils.response import standard_response
 from backend.schemas.schemas import (
@@ -13,9 +12,8 @@ from backend.schemas.schemas import (
     ScreenCreate, ScreenUpdate, ScreenResponse,
     SeatPricingCreate, SeatPricingUpdate, SeatPricingResponse,
     PricingRuleCreate, PricingRuleUpdate, PricingRuleResponse,
-    MediaAssetResponse, AuditLogResponse
+    AuditLogResponse
 )
-from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -36,9 +34,6 @@ def get_client_ip(request: Request) -> str:
 
 def get_theatre_service(db: Session = Depends(get_db)) -> TheatreService:
     return TheatreService(db)
-
-def get_media_service(db: Session = Depends(get_db)) -> MediaService:
-    return MediaService(db)
 
 def get_admin_service(db: Session = Depends(get_db)) -> AdminService:
     return AdminService(db)
@@ -174,61 +169,15 @@ async def update_rule(
     rule_res = PricingRuleResponse.model_validate(db_rule)
     return standard_response(data=rule_res, message="Pricing rule updated successfully")
 
-# --- MEDIA & MEDIA ASSETS ---
-class ExternalMediaRequest(BaseModel):
-    image_url: str
-    asset_type: str = "original"
-
-@router.post("/media/upload-url")
-async def upload_media_url(
-    request: Request,
-    payload: ExternalMediaRequest,
-    media_service: MediaService = Depends(get_media_service),
-    current_user=Depends(require_roles(["admin", "theatre_manager"]))
-):
-    ip = get_client_ip(request)
-    db_asset = await media_service.register_external_media(payload.image_url, payload.asset_type, current_user, ip)
-    asset_res = MediaAssetResponse.model_validate(db_asset)
-    return standard_response(data=asset_res, message="External media registered successfully")
-
-@router.post("/media/upload")
-async def upload_media(
-    request: Request,
-    file: Optional[UploadFile] = File(None),
-    image_url: Optional[str] = Form(None),
-    asset_type: str = "original",
-    media_service: MediaService = Depends(get_media_service),
-    current_user=Depends(require_roles(["admin", "theatre_manager"]))
-):
-    from fastapi import HTTPException
-    if not file and not image_url:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Either file upload or external image_url must be provided."
-        )
-
-    ip = get_client_ip(request)
-    if file:
-        db_asset = await media_service.upload_local_media(file, asset_type, current_user, ip)
-    else:
-        # Cast to str (verified truthiness on line 330)
-        db_asset = await media_service.register_external_media(str(image_url), asset_type, current_user, ip)
-
-    asset_res = MediaAssetResponse.model_validate(db_asset)
-    return standard_response(data=asset_res, message="Media uploaded successfully")
-
-@router.delete("/media/{asset_id}")
-async def delete_media(
-    asset_id: int, 
-    request: Request, 
-    media_service: MediaService = Depends(get_media_service), 
-    current_user=Depends(require_roles(["admin", "theatre_manager"]))
-):
-    ip = get_client_ip(request)
-    await media_service.delete_media_asset(asset_id, current_user, ip)
-    return standard_response(message="Media asset deleted successfully")
-
 # --- SYSTEM STATS & BOOKINGS LOGS ---
+# NOTE: the standalone Media Library endpoints (POST /media/upload,
+# POST /media/upload-url, DELETE /media/{asset_id}) were removed here.
+# They only ever backed the standalone Admin Media Library UI
+# (src/app/admin/media/page.tsx, removed), which could not even list its
+# own assets. Movie poster uploads do NOT depend on these routes — they
+# go through POST /api/movies/upload-poster (backend/routes/movie_routes.py),
+# which calls MediaService.upload_local_media / register_external_media
+# directly and is untouched by this change.
 @router.get("/stats")
 async def get_admin_stats(
     admin_service: AdminService = Depends(get_admin_service), 

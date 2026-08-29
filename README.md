@@ -39,7 +39,6 @@ Cinema Plus is a full-stack cinema management and ticket reservation platform de
 - 🪑 **Layout Designer** — Visual seat layout grid editor with row/category assignments
 - 📅 **Show Scheduling** — Create and manage show times across screens with price multipliers
 - 💰 **Pricing Engine** — Category pricing (Normal / Executive / Premium) with dynamic rules
-- 🖼️ **Media Library** — Centralized media asset management with thumbnail generation
 - 📋 **Audit Logs** — Tamper-evident action audit trail with IP address tracking
 - 🔍 **System Health** — Real-time database and storage health monitoring endpoint (`/health`)
 

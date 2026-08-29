@@ -5,7 +5,6 @@ import type {
   AuditLog,
   SystemHealth,
   BookingTrendPoint,
-  MediaAsset,
   Movie,
   PricingRule,
   PricingRuleCreate,
@@ -121,25 +120,6 @@ export function updatePricingRule(token: string, id: number, payload: PricingRul
   return apiClient.put<PricingRule, PricingRuleUpdate>(apiRoutes.admin.pricingRule(id), payload, {
     token,
   });
-}
-
-// ─── Media ──────────────────────────────────────────────────────────────────
-export function uploadMediaUrl(token: string, imageUrl: string, assetType = "original") {
-  return apiClient.post<MediaAsset>(
-    apiRoutes.admin.mediaUploadUrl,
-    { image_url: imageUrl, asset_type: assetType },
-    { token },
-  );
-}
-
-export function uploadMediaFile(token: string, formData: FormData) {
-  return apiClient.post<MediaAsset>(apiRoutes.admin.mediaUpload, formData as unknown, {
-    token,
-  });
-}
-
-export function deleteMediaAsset(token: string, assetId: number) {
-  return apiClient.delete<void>(apiRoutes.admin.media(assetId), { token });
 }
 
 // ─── Movies (admin listing via public API) ──────────────────────────────────

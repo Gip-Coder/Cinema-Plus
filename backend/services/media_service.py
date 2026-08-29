@@ -1,24 +1,28 @@
 from sqlalchemy.orm import Session
 from fastapi import UploadFile
-from typing import Optional, List, Dict
 from backend.repositories.media_repository import MediaAssetRepository
 from backend.models.models import MediaAsset, User
 from backend.storage.local_storage import LocalStorageProvider
-from backend.utils.media_processor import validate_and_process_image, validate_external_image_url, delete_processed_image
+from backend.utils.media_processor import validate_and_process_image, validate_external_image_url
 from backend.utils.audit_logger import log_action
-from backend.exceptions.base import NotFoundException
 
 class MediaService:
+    """Backs the movie poster upload pipeline (POST /api/movies/upload-poster).
+
+    NOTE: the standalone Admin Media Library (list/view/delete arbitrary
+    media assets) was removed — it could not even list its own uploads and
+    had no real consumer. `get_media_asset`/`delete_media_asset` were only
+    ever called by that removed UI's backend routes and were removed with
+    it. `media_assets` rows are still created here as an internal upload
+    record (kept per product decision — not dropped), but nothing reads
+    them back; the URL returned to the caller is what actually gets stored
+    on Movie.poster_url.
+    """
+
     def __init__(self, db: Session):
         self.media_repo = MediaAssetRepository(db)
         self.storage = LocalStorageProvider()
         self.db = db
-
-    async def get_media_asset(self, asset_id: int) -> MediaAsset:
-        asset = self.media_repo.get_by_id(asset_id)
-        if not asset:
-            raise NotFoundException("Media asset not found")
-        return asset
 
     async def upload_local_media(self, file: UploadFile, asset_type: str, current_user: User, client_ip: str) -> MediaAsset:
         # Custom image validation & processing logic
@@ -37,7 +41,7 @@ class MediaService:
             original_source_url=None
         )
         asset = self.media_repo.create(new_asset)
-        
+
         # Log action
         log_action(
             self.db, current_user.id, "media", asset.id, "upload",
@@ -62,7 +66,7 @@ class MediaService:
             original_source_url=image_url
         )
         asset = self.media_repo.create(new_asset)
-        
+
         # Log action
         log_action(
             self.db, current_user.id, "media", asset.id, "upload_url",
@@ -70,22 +74,3 @@ class MediaService:
             ip_address=client_ip
         )
         return asset
-
-    async def delete_media_asset(self, asset_id: int, current_user: User, client_ip: str) -> None:
-        asset = self.media_repo.get_by_id(asset_id)
-        if not asset:
-            raise NotFoundException("Media asset not found")
-            
-        old_val = {"filename": asset.filename, "storage_key": asset.storage_key}
-        
-        # Disk delete
-        if asset.storage_key:
-            delete_processed_image(asset.storage_key)
-            
-        self.media_repo.delete(asset)
-        
-        # Log action
-        log_action(
-            self.db, current_user.id, "media", asset_id, "delete",
-            old_value=old_val, ip_address=client_ip
-        )

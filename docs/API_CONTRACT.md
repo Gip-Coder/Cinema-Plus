@@ -192,9 +192,6 @@ Role dependencies in the backend allow broader staff/theatre manager access for 
 | `PUT` | `/api/admin/pricing/{pricing_id}` | Admin/Theatre Manager | `SeatPricingUpdate` JSON; header `X-Admin-Override?` | `SeatPricingResponse` |
 | `POST` | `/api/admin/pricing/rules` | Admin/Theatre Manager | `PricingRuleCreate` JSON | `PricingRuleResponse` |
 | `PUT` | `/api/admin/pricing/rules/{rule_id}` | Admin/Theatre Manager | `PricingRuleUpdate` JSON | `PricingRuleResponse` |
-| `POST` | `/api/admin/media/upload-url` | Admin/Theatre Manager | `{ image_url: string, asset_type?: string }` | `MediaAssetResponse` |
-| `POST` | `/api/admin/media/upload` | Admin/Theatre Manager | Multipart `file` or form `image_url`, `asset_type` | `MediaAssetResponse` |
-| `DELETE` | `/api/admin/media/{asset_id}` | Admin/Theatre Manager | Path: `asset_id` | Empty envelope |
 | `GET` | `/api/admin/stats` | Admin | None | Stats object |
 | `GET` | `/api/admin/revenue-chart` | Admin | None | Revenue chart object |
 | `GET` | `/api/admin/booking-trends` | Admin | None | Booking trends object |
