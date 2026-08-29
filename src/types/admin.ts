@@ -208,14 +208,35 @@ export interface AuditLog {
 }
 
 // ─── System Health ──────────────────────────────────────────────────────────
+export interface SchedulerTaskStatus {
+  status: string;
+  detail: string;
+}
+
 export interface SystemHealth {
   status: string;
   database: {
     status: string;
     latency_ms: number;
+    engine: string;
   };
   cache: {
     status: string;
+    scope: string;
+  };
+  storage: {
+    status: string;
+    path: string;
+    note: string;
+  };
+  reservation: {
+    mechanism: string;
+    hold_minutes: number;
+  };
+  scheduler_tasks: {
+    reservation_expiry_cleanup: SchedulerTaskStatus;
+    daily_revenue_compiler: SchedulerTaskStatus;
+    media_thumbnail_optimizer: SchedulerTaskStatus;
   };
   system: {
     cpu_usage_percent: number;

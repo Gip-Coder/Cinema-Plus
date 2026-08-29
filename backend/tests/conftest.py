@@ -70,3 +70,21 @@ def client_fixture(db):
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter_between_tests():
+    # backend.utils.rate_limiter.rate_limiter is a process-global singleton
+    # (by design — see its module docstring, it mirrors the single-worker
+    # production deployment). Without resetting it here, login/register
+    # calls made by any earlier test in this same pytest process count
+    # toward the same client-IP bucket as every later test (TestClient uses
+    # a fixed "testclient" host), so the whole suite would slowly approach
+    # the real rate limit and start failing tests that have nothing to do
+    # with rate limiting themselves — this is what happened before this
+    # fixture existed.
+    from backend.utils.rate_limiter import rate_limiter
+
+    rate_limiter.reset()
+    yield
+    rate_limiter.reset()

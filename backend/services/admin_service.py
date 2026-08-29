@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, text
 from backend.repositories.booking_repository import BookingRepository
 from backend.repositories.movie_repository import MovieRepository
 from backend.repositories.user_repository import UserRepository
@@ -120,18 +120,36 @@ class AdminService:
         return repo.get_all(skip, limit)
 
     async def get_system_health(self) -> Dict:
+        import os
         import time
+        from backend.core.config import settings
         from backend.utils.cache import cache
-        
-        # Test db connection speed
+
+        # Test db connection speed.
+        # NOTE: this previously called `self.db.execute(func.select(1))`,
+        # which is NOT a SELECT statement — `func` (sqlalchemy.func) builds a
+        # call to a SQL *function* literally named "select", which doesn't
+        # exist on any engine (MySQL or otherwise). That always raised an
+        # exception, which is why this always reported "unhealthy" with
+        # 0ms latency regardless of the real database's health — the actual
+        # production /health endpoint (backend/main.py) always used the
+        # correct `text("SELECT 1")` and was never affected.
         start_time = time.time()
         try:
-            self.db.execute(func.select(1))
+            self.db.execute(text("SELECT 1"))
             db_status = "healthy"
             db_latency_ms = round((time.time() - start_time) * 1000, 2)
         except Exception:
             db_status = "unhealthy"
             db_latency_ms = 0.0
+
+        # Real database engine, so the dashboard reflects whatever this
+        # deployment actually runs (MySQL in production, SQLite in tests)
+        # instead of a hardcoded, possibly stale label.
+        try:
+            db_engine_name = self.db.get_bind().dialect.name
+        except Exception:
+            db_engine_name = "unknown"
 
         # Test cache/redis connection
         try:
@@ -140,6 +158,65 @@ class AdminService:
             cache_status = "healthy" if val == "ok" else "unhealthy"
         except Exception:
             cache_status = "unhealthy"
+
+        # Real storage check: an actual write+delete against the configured
+        # uploads directory, same technique as backend/main.py's /health
+        # endpoint. This does NOT confirm the path is backed by a Railway
+        # persistent Volume (nothing in-process can observe that) — it only
+        # confirms the directory is currently writable.
+        try:
+            os.makedirs("uploads", exist_ok=True)
+            test_file = os.path.join("uploads", ".admin_health_test")
+            with open(test_file, "w") as f:
+                f.write("ok")
+            os.remove(test_file)
+            storage_status = "healthy"
+        except Exception:
+            storage_status = "unhealthy"
+
+        # The seat-reservation double-booking guard is a permanent DB-level
+        # constraint (see alembic migration f3a1c9b8d2e4 and
+        # backend/models/booking.py's uq_booked_seats_show_seat), not a
+        # toggleable runtime service — there is no separate "engine" process
+        # to poll, so this reports the real, static configuration instead of
+        # a fabricated live status.
+        reservation_info = {
+            "mechanism": "database_unique_constraint",
+            "hold_minutes": settings.RESERVATION_TIMEOUT_MINUTES,
+        }
+
+        # There is no scheduler/worker infrastructure in this codebase at all
+        # (no APScheduler/Celery/cron/periodic asyncio task) — confirmed by
+        # source inspection, not assumed. Each of these previously showed a
+        # fabricated ACTIVE/IDLE badge with a fake "last run" timestamp.
+        scheduler_tasks = {
+            "reservation_expiry_cleanup": {
+                "status": "on_demand",
+                "detail": (
+                    "Not a scheduled job. Runs inline, synchronously, at the "
+                    "start of every new reservation request "
+                    "(ReservationService.cleanup_expired_reservations) — "
+                    "only sweeps expired holds when someone happens to "
+                    "reserve a seat afterward, not on a timer."
+                ),
+            },
+            "daily_revenue_compiler": {
+                "status": "not_configured",
+                "detail": (
+                    "No background job exists. Revenue/booking-trend "
+                    "analytics are computed on demand per request, with a "
+                    "short-lived in-memory cache (see AdminService.get_admin_stats)."
+                ),
+            },
+            "media_thumbnail_optimizer": {
+                "status": "not_configured",
+                "detail": (
+                    "No background job exists. Thumbnails are generated "
+                    "synchronously at upload time "
+                    "(backend/utils/media_processor.py), not by a scheduled sweep."
+                ),
+            },
+        }
 
         # System resources (graceful check for psutil)
         cpu_usage = 0.0
@@ -169,15 +246,33 @@ class AdminService:
         except Exception:
             pass
         
+        overall_healthy = db_status == "healthy" and cache_status == "healthy" and storage_status == "healthy"
         return {
-            "status": "healthy" if db_status == "healthy" and cache_status == "healthy" else "degraded",
+            "status": "healthy" if overall_healthy else "degraded",
             "database": {
                 "status": db_status,
-                "latency_ms": db_latency_ms
+                "latency_ms": db_latency_ms,
+                "engine": db_engine_name,
             },
             "cache": {
-                "status": cache_status
+                "status": cache_status,
+                # This is backend/utils/cache.py's InMemoryCache — a plain
+                # process-local dict, not Redis. Only correct for a
+                # single-worker deployment (see Dockerfile: --workers 1).
+                "scope": "process-local (single worker only)",
             },
+            "storage": {
+                "status": storage_status,
+                "path": "uploads/",
+                "note": (
+                    "Write test against the local filesystem only. Whether "
+                    "this path is backed by a persistent Railway Volume "
+                    "cannot be determined from inside the application — "
+                    "confirm the Volume mount in the Railway service settings."
+                ),
+            },
+            "reservation": reservation_info,
+            "scheduler_tasks": scheduler_tasks,
             "system": {
                 "cpu_usage_percent": cpu_usage,
                 "memory_usage_percent": mem_percent,

@@ -1,14 +1,6 @@
-import pytest
 from fastapi import status
 
 from backend.utils.rate_limiter import rate_limiter
-
-
-@pytest.fixture(autouse=True)
-def _reset_rate_limiter():
-    rate_limiter.reset()
-    yield
-    rate_limiter.reset()
 
 
 def test_login_rate_limit_blocks_after_threshold_then_recovers(client):

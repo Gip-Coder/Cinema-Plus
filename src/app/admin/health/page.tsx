@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { 
-  Database, 
-  RefreshCw, 
+import {
+  Database,
+  RefreshCw,
   AlertTriangle,
   Clock,
   Activity,
@@ -13,6 +13,9 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import * as adminApi from "@/lib/api/admin";
+import { authApi } from "@/lib/api/auth";
+import { moviesApi } from "@/lib/api/movies";
+import { bookingsApi } from "@/lib/api/bookings";
 import type { SystemHealth } from "@/types/admin";
 
 interface LatencyTestPoint {
@@ -21,37 +24,61 @@ interface LatencyTestPoint {
   status: "fast" | "average" | "slow" | "error";
 }
 
+// Every one of these is a real live request measured client-side
+// (round-trip time, including network — not a backend-instrumented figure).
+// There is no fabricated/demo data here: each entry either reflects an
+// actual call made during this poll, or is absent.
+const LATENCY_PROBES: Array<{ label: string; run: (token: string) => Promise<unknown> }> = [
+  { label: "/api/admin/stats", run: (token) => adminApi.getStats(token) },
+  { label: "/api/auth/me", run: (token) => authApi.me(token) },
+  { label: "/api/movies/", run: () => moviesApi.list() },
+  { label: "/api/bookings/user/bookings", run: (token) => bookingsApi.userBookings(token) },
+  { label: "/api/layouts/templates/list", run: (token) => adminApi.getLayoutTemplates(token) },
+];
+
+function classifyLatency(ms: number): LatencyTestPoint["status"] {
+  if (ms > 200) return "slow";
+  if (ms > 100) return "average";
+  return "fast";
+}
+
+async function measureLatencies(token: string): Promise<LatencyTestPoint[]> {
+  const results: LatencyTestPoint[] = [];
+  for (const probe of LATENCY_PROBES) {
+    const start = performance.now();
+    try {
+      await probe.run(token);
+      const latencyMs = Math.round(performance.now() - start);
+      results.push({ endpoint: probe.label, latencyMs, status: classifyLatency(latencyMs) });
+    } catch {
+      results.push({ endpoint: probe.label, latencyMs: 0, status: "error" });
+    }
+  }
+  return results;
+}
+
+interface LogEntry {
+  time: string;
+  level: "info" | "warning";
+  service: string;
+  message: string;
+}
+
 export default function AdminHealthPage() {
   const { accessToken, role } = useAuth();
-  
-  // States
+
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [latencyTests, setLatencyTests] = useState<LatencyTestPoint[]>([]);
 
-  // Custom Latency tests state
-  const [latencyTests, setLatencyTests] = useState<LatencyTestPoint[]>([
-    { endpoint: "/api/auth/me", latencyMs: 45, status: "fast" },
-    { endpoint: "/api/movies/", latencyMs: 120, status: "average" },
-    { endpoint: "/api/bookings/user/bookings", latencyMs: 95, status: "fast" },
-    { endpoint: "/api/layouts/templates/list", latencyMs: 210, status: "slow" },
-  ]);
-
-  // Operational Background Task State
-  const [backgroundTasks] = useState([
-    { name: "Reservation Expired Sweeper", interval: "Every 1 min", status: "active", lastRun: "30s ago" },
-    { name: "Daily Revenue Compiler", interval: "Every 24 hrs", status: "active", lastRun: "4 hrs ago" },
-    { name: "Media Thumbnail Optimizer", interval: "On demand", status: "idle", lastRun: "1 day ago" },
-  ]);
-
-  // Log feed state
-  const [logs, setLogs] = useState([
-    { time: "18:41:20", level: "info", service: "auth", message: "Token issued to customer user #142" },
-    { time: "18:39:55", level: "info", service: "reservation", message: "Seat lock created for showtime #88: Seats A3, A4" },
-    { time: "18:35:10", level: "warning", service: "media", message: "Fallback poster returned for movie id #12" },
-    { time: "18:31:02", level: "info", service: "checkout", message: "Payment checkout session successfully completed for booking #43" }
-  ]);
+  // This console has no backend log-streaming API to read from — the
+  // backend only writes to stdout (see backend/main.py's RequestLoggingMiddleware),
+  // which isn't exposed over HTTP. Rather than fabricate log lines (as this
+  // page previously did), this feed only ever contains entries this browser
+  // session actually observed itself.
+  const [logs, setLogs] = useState<LogEntry[]>([]);
 
   const fetchHealth = useCallback(async (isRefresh = false) => {
     if (!accessToken) return;
@@ -59,26 +86,23 @@ export default function AdminHealthPage() {
     else setLoading(true);
 
     try {
-      const data = await adminApi.getSystemHealth(accessToken);
+      const [data, latencies] = await Promise.all([
+        adminApi.getSystemHealth(accessToken),
+        measureLatencies(accessToken),
+      ]);
       setHealth(data ?? null);
+      setLatencyTests(latencies);
       setError(null);
 
-      // Perform a simulated check of actual FastAPI latency endpoints to enrich data
-      const start = Date.now();
-      await adminApi.getStats(accessToken).catch(() => null);
-      const latency = Date.now() - start;
-
-      setLatencyTests(prev => [
-        { endpoint: "/api/admin/stats (Live)", latencyMs: latency, status: latency > 200 ? "slow" : latency > 100 ? "average" : "fast" },
-        ...prev.filter(p => !p.endpoint.includes("/api/admin/stats"))
+      setLogs((prev) => [
+        {
+          time: new Date().toLocaleTimeString(),
+          level: data?.status === "healthy" ? "info" : "warning",
+          service: "health",
+          message: `Health telemetry polled from this browser — status=${data?.status}, db=${data?.database.status} (${data?.database.engine}), storage=${data?.storage.status}.`,
+        },
+        ...prev.slice(0, 8),
       ]);
-
-      // Add a fresh log
-      setLogs(prev => [
-        { time: new Date().toLocaleTimeString(), level: "info", service: "health", message: `System health telemetry polled. Database latency: ${data?.database.latency_ms || 0}ms` },
-        ...prev.slice(0, 8)
-      ]);
-
     } catch {
       setError("Failed to fetch system health status telemetry.");
     } finally {
@@ -105,19 +129,28 @@ export default function AdminHealthPage() {
   }
 
   const getStatusColor = (status: string) => {
-    if (status === "healthy" || status === "active" || status === "fast") return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
-    if (status === "degraded" || status === "average" || status === "idle") return "bg-amber-500/10 text-amber-400 border-amber-500/20";
+    if (status === "healthy" || status === "fast") return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+    if (status === "degraded" || status === "average" || status === "on_demand") return "bg-amber-500/10 text-amber-400 border-amber-500/20";
+    if (status === "not_configured") return "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
     return "bg-red-500/10 text-red-400 border-red-500/20";
   };
 
+  const schedulerRows = health
+    ? [
+        { name: "Reservation Expiry Cleanup", ...health.scheduler_tasks.reservation_expiry_cleanup },
+        { name: "Daily Revenue Compiler", ...health.scheduler_tasks.daily_revenue_compiler },
+        { name: "Media Thumbnail Optimizer", ...health.scheduler_tasks.media_thumbnail_optimizer },
+      ]
+    : [];
+
   return (
     <div className="space-y-8 text-zinc-100 pb-16">
-      
+
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/[0.04] pb-6">
         <div>
           <h1 className="text-2xl font-bold text-zinc-100">Operational Health Console</h1>
-          <p className="text-sm text-zinc-500 mt-1">Real-time status of FastAPI database connectors, reservation holds, and server hardware.</p>
+          <p className="text-sm text-zinc-500 mt-1">Live status of the FastAPI backend, database, and storage — every value below is measured on each poll, not simulated.</p>
         </div>
         <button
           onClick={() => fetchHealth(true)}
@@ -147,7 +180,7 @@ export default function AdminHealthPage() {
         <>
           {/* Main Indicators grid */}
           <div className="grid gap-6 md:grid-cols-3">
-            
+
             {/* Database & Latency */}
             <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 space-y-4">
               <div className="flex items-center justify-between">
@@ -157,7 +190,7 @@ export default function AdminHealthPage() {
                   </div>
                   <div>
                     <h3 className="font-bold text-sm text-zinc-200">Database Connection</h3>
-                    <p className="text-[10px] text-zinc-500">PostgreSQL Pool</p>
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wide">{health.database.engine} pool</p>
                   </div>
                 </div>
                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase border ${getStatusColor(health.database.status)}`}>
@@ -179,20 +212,19 @@ export default function AdminHealthPage() {
                   </div>
                   <div>
                     <h3 className="font-bold text-sm text-zinc-200">Storage Provider</h3>
-                    <p className="text-[10px] text-zinc-500">Local uploads directory</p>
+                    <p className="text-[10px] text-zinc-500">Local disk write test ({health.storage.path})</p>
                   </div>
                 </div>
-                <span className="rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-                  ONLINE
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase border ${getStatusColor(health.storage.status)}`}>
+                  {health.storage.status}
                 </span>
               </div>
-              <div className="flex justify-between border-t border-white/[0.04] pt-4 text-xs font-semibold">
-                <span className="text-zinc-500">Active Media Assets:</span>
-                <span className="font-mono text-zinc-200">Local Disk storage</span>
+              <div className="border-t border-white/[0.04] pt-4 text-[10px] text-zinc-500 leading-relaxed">
+                {health.storage.note}
               </div>
             </div>
 
-            {/* Reservation Engine Status */}
+            {/* Reservation Guard Status */}
             <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -200,30 +232,34 @@ export default function AdminHealthPage() {
                     <Clock className="h-5 w-5 text-orange-400" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-sm text-zinc-200">Reservation Lock Engine</h3>
-                    <p className="text-[10px] text-zinc-500">Concurrent session tracker</p>
+                    <h3 className="font-bold text-sm text-zinc-200">Seat Reservation Guard</h3>
+                    <p className="text-[10px] text-zinc-500">Database-level unique constraint</p>
                   </div>
                 </div>
                 <span className="rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-                  ACTIVE
+                  ENFORCED
                 </span>
               </div>
               <div className="flex justify-between border-t border-white/[0.04] pt-4 text-xs font-semibold">
-                <span className="text-zinc-500">Session Holds Limit:</span>
-                <span className="font-mono text-zinc-200">10 mins hold lock</span>
+                <span className="text-zinc-500">Hold Timeout:</span>
+                <span className="font-mono text-zinc-200">{health.reservation.hold_minutes} min</span>
               </div>
+              <p className="text-[10px] text-zinc-500 leading-relaxed">
+                Double-booking is prevented by a permanent database constraint, not a
+                monitored background process — there is no separate &quot;engine&quot; to be up or down.
+              </p>
             </div>
 
           </div>
 
           {/* Latency & Tasks split */}
           <div className="grid gap-6 md:grid-cols-2">
-            
+
             {/* API Latency Tests */}
             <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 space-y-4">
               <h3 className="font-bold text-sm text-zinc-200 flex items-center gap-2 border-b border-white/[0.04] pb-3">
                 <Activity className="h-4 w-4 text-red-500" />
-                API Endpoint Latency Logs
+                API Endpoint Latency (live, client-measured round-trip)
               </h3>
 
               <div className="space-y-3">
@@ -231,7 +267,7 @@ export default function AdminHealthPage() {
                   <div key={test.endpoint} className="flex items-center justify-between p-2.5 rounded-xl border border-white/[0.04] bg-white/[0.005] hover:bg-white/[0.015] transition-colors">
                     <span className="text-xs font-mono text-zinc-400 truncate max-w-[240px]">{test.endpoint}</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-zinc-200">{test.latencyMs} ms</span>
+                      <span className="text-xs font-bold text-zinc-200">{test.status === "error" ? "—" : `${test.latencyMs} ms`}</span>
                       <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${getStatusColor(test.status)}`}>
                         {test.status}
                       </span>
@@ -245,22 +281,19 @@ export default function AdminHealthPage() {
             <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 space-y-4">
               <h3 className="font-bold text-sm text-zinc-200 flex items-center gap-2 border-b border-white/[0.04] pb-3">
                 <PlayCircle className="h-4 w-4 text-red-500" />
-                Scheduler Tasks Queue
+                Scheduler Tasks
               </h3>
 
               <div className="space-y-3">
-                {backgroundTasks.map((task) => (
-                  <div key={task.name} className="flex items-center justify-between p-2.5 rounded-xl border border-white/[0.04] bg-white/[0.005]">
-                    <div>
+                {schedulerRows.map((task) => (
+                  <div key={task.name} className="flex items-start justify-between gap-3 p-2.5 rounded-xl border border-white/[0.04] bg-white/[0.005]">
+                    <div className="min-w-0">
                       <span className="text-xs font-bold text-zinc-300 block">{task.name}</span>
-                      <span className="text-[10px] text-zinc-500">{task.interval}</span>
+                      <span className="text-[10px] text-zinc-500 leading-relaxed block mt-1">{task.detail}</span>
                     </div>
-                    <div className="text-right space-y-0.5">
-                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${getStatusColor(task.status)}`}>
-                        {task.status}
-                      </span>
-                      <span className="block text-[9px] text-zinc-500">Run {task.lastRun}</span>
-                    </div>
+                    <span className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${getStatusColor(task.status)}`}>
+                      {task.status.replace("_", " ")}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -272,20 +305,29 @@ export default function AdminHealthPage() {
           <div className="rounded-2xl border border-white/[0.06] bg-zinc-950 p-6 space-y-4">
             <h3 className="font-bold text-sm text-white flex items-center gap-2">
               <Terminal className="h-4 w-4 text-red-500" />
-              Live Operational Log Feed
+              Session Poll Log
             </h3>
+            <p className="text-[10px] text-zinc-600">
+              This backend does not expose a live log-streaming API, so this feed only records
+              health polls made by this browser session — it is not a view into server-side logs.
+              Check your Railway service logs directly for actual application/request logs.
+            </p>
 
             <div className="p-4 bg-black/80 rounded-xl font-mono text-[11px] text-zinc-400 border border-white/[0.06] space-y-2 max-h-56 overflow-y-auto">
-              {logs.map((log, idx) => (
-                <div key={idx} className="flex items-start gap-3">
-                  <span className="text-zinc-600 shrink-0">{log.time}</span>
-                  <span className={`uppercase font-bold shrink-0 w-12 ${
-                    log.level === "warning" ? "text-amber-500" : "text-blue-400"
-                  }`}>[{log.level}]</span>
-                  <span className="text-zinc-500 shrink-0">[{log.service}]</span>
-                  <span className="text-zinc-300">{log.message}</span>
-                </div>
-              ))}
+              {logs.length === 0 ? (
+                <div className="text-zinc-600">No polls recorded yet this session.</div>
+              ) : (
+                logs.map((log, idx) => (
+                  <div key={idx} className="flex items-start gap-3">
+                    <span className="text-zinc-600 shrink-0">{log.time}</span>
+                    <span className={`uppercase font-bold shrink-0 w-16 ${
+                      log.level === "warning" ? "text-amber-500" : "text-blue-400"
+                    }`}>[{log.level}]</span>
+                    <span className="text-zinc-500 shrink-0">[{log.service}]</span>
+                    <span className="text-zinc-300">{log.message}</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </>
