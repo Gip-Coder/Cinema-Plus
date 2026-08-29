@@ -39,6 +39,19 @@ vi.mock("@/lib/api/movies", () => ({
         running_days: 15,
         status: "Coming Soon",
       },
+      {
+        id: 3,
+        title: "Unconfirmed Runtime Film",
+        genre: "Drama",
+        language: "English",
+        format: "2D",
+        duration: null,
+        rating: 7.0,
+        poster_url: null,
+        release_date: "2026-12-18",
+        running_days: 30,
+        status: "Coming Soon",
+      },
     ]),
   },
 }));
@@ -91,5 +104,21 @@ describe("Home Page Component", () => {
     fireEvent.click(comingSoonTab);
     expect(screen.queryByText("Interstellar")).not.toBeInTheDocument();
     expect(screen.getByText("Avengers")).toBeInTheDocument();
+  });
+
+  test("renders known duration and a 'Runtime unavailable' fallback for null duration", async () => {
+    render(<Home />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Interstellar")).toBeInTheDocument();
+    });
+
+    // Known duration still renders as before.
+    expect(screen.getByText("Duration: 169 mins")).toBeInTheDocument();
+
+    // Null duration renders the fallback instead of "Duration: null mins".
+    expect(screen.getByText("Unconfirmed Runtime Film")).toBeInTheDocument();
+    expect(screen.getByText("Runtime unavailable")).toBeInTheDocument();
+    expect(screen.queryByText(/duration:\s*null/i)).not.toBeInTheDocument();
   });
 });

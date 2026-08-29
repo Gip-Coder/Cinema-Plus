@@ -63,9 +63,10 @@ class MovieUpdate(BaseModel):
 
 class MovieResponse(MovieBase):
     id: int
+    duration: Optional[int] = Field(None, gt=0)
     poster_uploaded_at: Optional[datetime] = None
     is_deleted: bool
     deleted_at: Optional[datetime] = None
-    
+
     class Config:
         from_attributes = True

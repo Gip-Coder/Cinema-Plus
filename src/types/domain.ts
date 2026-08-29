@@ -14,7 +14,7 @@ export interface Movie {
   poster_url?: string | null;
   poster_source_type?: string | null;
   description?: string | null;
-  duration: number;
+  duration: number | null;
   rating?: number | null;
   poster_uploaded_at?: DateTimeString | null;
   is_deleted: boolean;

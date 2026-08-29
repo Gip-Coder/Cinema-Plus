@@ -171,7 +171,7 @@ export default function Home() {
                   </p>
                   <p className="text-[11px] text-zinc-400 flex items-center gap-1">
                     <Calendar className="h-3.5 w-3.5 text-zinc-600" />
-                    <span>Duration: {movie.duration} mins</span>
+                    <span>{movie.duration != null ? `Duration: ${movie.duration} mins` : "Runtime unavailable"}</span>
                   </p>
                 </div>
               </Link>

@@ -416,7 +416,9 @@ export default function MovieDetailsPage() {
             <div className="space-y-2 text-xs text-zinc-400 border-t border-white/[0.04] pt-4">
               <div className="flex items-center justify-between">
                 <span>Duration:</span>
-                <span className="font-semibold text-zinc-200">{movie.duration} minutes</span>
+                <span className="font-semibold text-zinc-200">
+                  {movie.duration != null ? `${movie.duration} minutes` : "Runtime unavailable"}
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Format:</span>
