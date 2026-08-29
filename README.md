@@ -15,6 +15,12 @@
 
 ---
 
+## 🌐 Live Demo
+
+**[Visit Cinema Plus](https://cinema-plus-frontend-production.up.railway.app)**
+
+---
+
 ## Overview
 
 Cinema Plus is a full-stack cinema management and ticket reservation platform designed with enterprise-grade architecture. It features a **FastAPI** backend with concurrency-safe seat reservations, database-level unique constraints, pessimistic locking (`SELECT FOR UPDATE`), a responsive **Next.js 15** frontend with modern dark UI, an interactive theatre layout designer, and full administrative tooling.
