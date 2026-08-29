@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import bundleAnalyzer from "@next/bundle-analyzer";
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: process.cwd(),
@@ -37,7 +38,7 @@ const nextConfig: NextConfig = {
 // Bundle analyzer — only active when ANALYZE=true
 const withBundleAnalyzer =
   process.env.ANALYZE === "true"
-    ? require("@next/bundle-analyzer")({ enabled: true })
+    ? bundleAnalyzer({ enabled: true })
     : (c: NextConfig) => c;
 
 export default withBundleAnalyzer(nextConfig);
