@@ -122,7 +122,56 @@ def delete_processed_image(storage_key: str):
                 print(f"Error removing file {path}: {e}")
 
 import urllib.parse
+import ipaddress
+import socket
 import httpx
+
+
+def _is_blocked_ip(ip_str: str) -> bool:
+    """True if `ip_str` must not be fetched by the server (SSRF guard)."""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return True  # unparsable address — fail closed
+    return (
+        ip.is_loopback
+        or ip.is_private
+        or ip.is_link_local  # covers cloud metadata endpoints, e.g. 169.254.169.254
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def _assert_safe_external_host(hostname: str) -> None:
+    """Resolve `hostname` and reject it if any resolved address is internal.
+
+    Blocks loopback (127.0.0.1, localhost), RFC1918 private ranges,
+    link-local addresses (including the 169.254.169.254 cloud metadata
+    endpoint), and other non-public ranges, so an admin/theatre_manager
+    supplying an "upload from URL" cannot make this server probe internal
+    infrastructure. DNS resolution failures are rejected safely (400, not a
+    hang or a 500).
+    """
+    if not hostname:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="URL is missing a host.")
+    try:
+        addr_infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Could not resolve host '{hostname}'.",
+        )
+    if not addr_infos:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not resolve host.")
+    for info in addr_infos:
+        ip_str = info[4][0]
+        if _is_blocked_ip(ip_str):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="URL resolves to an internal or blocked address and cannot be fetched.",
+            )
+
 
 def validate_external_image_url(url: str) -> Dict[str, str]:
     """
@@ -136,7 +185,7 @@ def validate_external_image_url(url: str) -> Dict[str, str]:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid URL scheme. Only http:// and https:// protocols are allowed."
         )
-        
+
     # Prevent common script injection attempts in URL string
     if "javascript:" in url.lower() or "data:" in url.lower():
         raise HTTPException(
@@ -144,10 +193,16 @@ def validate_external_image_url(url: str) -> Dict[str, str]:
             detail="Unsafe URL protocol or source type."
         )
 
+    # 1b. SSRF guard: reject internal/private/loopback/link-local targets
+    _assert_safe_external_host(parsed.hostname or "")
+
     # 2. Check extension & MIME by streaming the content
     try:
-        # Timeout at 5.0 seconds to prevent hanging
-        with httpx.Client(follow_redirects=True, timeout=5.0) as client:
+        # Timeout at 5.0 seconds to prevent hanging. Redirects are NOT
+        # followed automatically — a redirect to an internal address would
+        # otherwise bypass the host check above, which only validates the
+        # URL the admin actually supplied.
+        with httpx.Client(follow_redirects=False, timeout=5.0) as client:
             with client.stream("GET", url, headers={"User-Agent": "Mozilla/5.0"}) as response:
                 if response.status_code != 200:
                     raise HTTPException(

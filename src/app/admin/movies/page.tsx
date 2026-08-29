@@ -5,6 +5,7 @@ import NextImage from "next/image";
 import { Plus, Search, Pencil, Trash2, Film, X, FileSpreadsheet, Upload, Link as LinkIcon } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import * as adminApi from "@/lib/api/admin";
+import { resolveMediaUrl } from "@/lib/api/client";
 import type { Movie } from "@/types/admin";
 
 type ModalMode = "create" | "edit" | null;
@@ -357,7 +358,7 @@ export default function AdminMoviesPage() {
                       <div className="flex items-center gap-3">
                         {movie.poster_url ? (
                           <NextImage
-                            src={movie.poster_url}
+                            src={resolveMediaUrl(movie.poster_url)}
                             alt={movie.title}
                             width={28}
                             height={40}

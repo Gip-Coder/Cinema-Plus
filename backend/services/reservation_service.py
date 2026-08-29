@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timedelta, timezone
 import secrets
 from typing import List, cast
@@ -83,8 +84,17 @@ class ReservationService:
                 status="active"
             )
             self.db.add(seat_res)
-        
-        self.db.commit()
+
+        # The application-level check_availability() call above is a
+        # check-then-act race under concurrent load. The DB-level unique
+        # constraint on the active-hold key (see backend/models/reservation.py)
+        # is the actual guarantee: if another request reserved the same seat
+        # in between our check and this commit, this raises IntegrityError.
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            raise SeatsAlreadyReservedException(seat_names)
         self.db.refresh(group)
 
         # 6. Dispatch event

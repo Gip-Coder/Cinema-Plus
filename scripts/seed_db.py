@@ -11,7 +11,66 @@ from backend.database import SessionLocal, engine, Base
 from backend.models import models
 from backend.auth.security import get_password_hash
 from backend.core.config import settings
+from backend.utils.layout_generator import generate_layout
 from datetime import date, datetime, timezone
+
+
+def ensure_published_layout(db: Session, screen) -> None:
+    """Ensure `screen` has a real, published seat map.
+
+    Reuses the same layout_generator + TheatreLayout/SeatDefinition
+    architecture as the admin Layout Designer (see
+    backend/utils/layout_generator.py, backend/models/layout.py) instead of
+    inventing a parallel seating representation. Without this, a freshly
+    seeded screen only has a `total_seats` count and no actual seats — the
+    seat-selection page has nothing to render and booking would accept
+    unvalidated seat names.
+
+    Idempotent: does nothing if the screen already has a published layout.
+    """
+    existing = (
+        db.query(models.TheatreLayout)
+        .filter(
+            models.TheatreLayout.screen_id == screen.id,
+            models.TheatreLayout.status == "published",
+        )
+        .first()
+    )
+    if existing:
+        return
+
+    template = "IMAX" if (screen.screen_type or "").upper() == "IMAX" else "STANDARD"
+    layout_data = generate_layout(total_seats=screen.total_seats, template=template)
+
+    layout = models.TheatreLayout(
+        theatre_id=screen.theatre_id,
+        screen_id=screen.id,
+        layout_name="Default Layout",
+        layout_type=template,
+        total_seats=layout_data.total_seats,
+        rows=layout_data.rows,
+        cols=layout_data.cols,
+        status="published",
+        version=1,
+        is_published=True,
+    )
+    db.add(layout)
+    db.flush()  # get layout.id
+
+    for seat in layout_data.seats:
+        db.add(models.SeatDefinition(
+            layout_id=layout.id,
+            seat_code=seat.seat_code,
+            row_label=seat.row_label,
+            seat_number=seat.seat_number,
+            seat_type=seat.seat_type,
+            category=seat.category,
+            position_x=seat.position_x,
+            position_y=seat.position_y,
+            is_active=seat.is_active,
+        ))
+    db.flush()
+    print(f"  ✓ Published seat layout for '{screen.name}' ({layout_data.total_seats} seats)")
 
 
 def seed_database():
@@ -26,6 +85,13 @@ def seed_database():
             print("Seeding Admin User...")
             admin_password = settings.ADMIN_PASSWORD
             if not admin_password:
+                if settings.is_production:
+                    raise RuntimeError(
+                        "[SEED ERROR] ADMIN_PASSWORD environment variable is not set. "
+                        "Refusing to seed an admin account with a known default password "
+                        "in production. Set ADMIN_PASSWORD in your environment configuration "
+                        "and re-run this script."
+                    )
                 print(
                     "\n[WARNING] ADMIN_PASSWORD is not set.\n"
                     "  Admin will be created with a temporary placeholder password.\n"
@@ -118,6 +184,14 @@ def seed_database():
         else:
             screen1 = db.query(models.Screen).filter(models.Screen.name.like("%IMAX%")).first()
             screen2 = db.query(models.Screen).filter(models.Screen.name.like("%Dolby%")).first()
+
+        # Ensure every seeded screen has a published, bookable seat map.
+        # Runs regardless of whether screens were just created above or
+        # already existed, so re-running this script also backfills layouts
+        # for any screen that's missing one.
+        print("Verifying seat layouts...")
+        for screen in db.query(models.Screen).all():
+            ensure_published_layout(db, screen)
 
         # Seeding Default Seat Pricings granularly
         pricings = db.query(models.SeatPricing).all()

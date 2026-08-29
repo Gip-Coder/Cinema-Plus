@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from fastapi import BackgroundTasks, Response
 from typing import List
 from backend.repositories.booking_repository import BookingRepository
@@ -69,9 +70,16 @@ class BookingService:
             self.booking_repo.add_booked_seat(new_seat)
 
         # Single atomic commit — booking + all seats committed together.
-        # If any booked_seats INSERT fails (e.g. unique constraint violation),
-        # the booking itself is also rolled back. No partial bookings visible.
-        self.booking_repo.commit_transaction()
+        # If any booked_seats INSERT fails (e.g. unique constraint violation
+        # from a concurrent request that booked the same seat first between
+        # our availability check above and this commit), the booking itself
+        # is also rolled back and we surface a clean 409 instead of letting
+        # the generic SQLAlchemyError handler turn it into an opaque 500.
+        try:
+            self.booking_repo.commit_transaction()
+        except IntegrityError:
+            self.booking_repo.rollback()
+            raise SeatsAlreadyBookedException(requested_seat_names)
         self.booking_repo.refresh(new_booking)
 
         # Send email confirmation

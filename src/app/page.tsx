@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Search, Film, Calendar, Star, PlayCircle } from "lucide-react";
 import { moviesApi } from "@/lib/api/movies";
+import { resolveMediaUrl } from "@/lib/api/client";
 import type { Movie } from "@/types/domain";
 
 export default function Home() {
@@ -140,8 +141,8 @@ export default function Home() {
                 <div className="aspect-[2/3] w-full rounded-2xl bg-white/[0.02] border border-white/[0.05] overflow-hidden relative shadow-md group-hover:border-red-500/20 group-hover:shadow-red-500/5 transition-all duration-300">
                   {movie.poster_url ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
-                    <img 
-                      src={movie.poster_url} 
+                    <img
+                      src={resolveMediaUrl(movie.poster_url)}
                       alt={movie.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />

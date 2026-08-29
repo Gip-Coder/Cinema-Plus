@@ -92,23 +92,16 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         return response
 
 
-# ── Auto Migrations ───────────────────────────────────────────────────────────
-def _run_migrations() -> None:
-    """Automatically apply Alembic database migrations on startup if possible."""
-    try:
-        from alembic.config import Config
-        from alembic import command
-
-        ini_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
-        if os.path.exists(ini_path):
-            alembic_cfg = Config(ini_path)
-            command.upgrade(alembic_cfg, "head")
-            print("[MIGRATIONS] Database schema verified and up-to-date (head).")
-    except Exception as e:
-        print(f"[MIGRATIONS INFO] Automatic migration check: {e}", file=sys.stderr)
-
-
 # ── Admin bootstrap ────────────────────────────────────────────────────────────
+# NOTE: Migrations are NOT run from this process. The production startup
+# command (Dockerfile CMD / Procfile: `alembic upgrade head && uvicorn ...`)
+# and the documented local dev flow (README: run `alembic upgrade head`
+# before `uvicorn --reload`) both already guarantee the schema is at head
+# before this app starts accepting traffic. A prior in-process
+# `_run_migrations()` call here duplicated that work on every boot and
+# silently swallowed migration failures (caught exception, stderr-only log),
+# which could let the app start against a broken schema. Removed in favor of
+# the single, fail-loud mechanism in the startup command.
 def _bootstrap_admin(db: Session) -> None:
     """Create initial admin user if one does not already exist.
 
@@ -173,10 +166,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         print(f"\n{e}\n", file=sys.stderr)
         sys.exit(1)
 
-    # 2. Automatically apply schema migrations on startup
-    _run_migrations()
-
-    # 3. Bootstrap admin account
+    # 2. Bootstrap admin account
     db = SessionLocal()
     try:
         _bootstrap_admin(db)
@@ -193,9 +183,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 # ── FastAPI Application ────────────────────────────────────────────────────────
-# Disable interactive docs in production unless explicitly enabled
-_docs_url = "/docs" if (not settings.is_production or settings.ENABLE_DOCS) else None
-_redoc_url = "/redoc" if (not settings.is_production or settings.ENABLE_DOCS) else None
+# Disable interactive docs AND the raw OpenAPI schema in production unless
+# explicitly enabled. Disabling only docs_url/redoc_url leaves /openapi.json
+# reachable by default (FastAPI's own default for openapi_url is unaffected
+# by docs_url/redoc_url), which still exposes every route/model shape.
+_docs_enabled = not settings.is_production or settings.ENABLE_DOCS
+_docs_url = "/docs" if _docs_enabled else None
+_redoc_url = "/redoc" if _docs_enabled else None
+_openapi_url = "/openapi.json" if _docs_enabled else None
 
 app = FastAPI(
     title="Cinema Plus API",
@@ -203,6 +198,7 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url=_docs_url,
     redoc_url=_redoc_url,
+    openapi_url=_openapi_url,
 )
 
 # ── Static files ───────────────────────────────────────────────────────────────

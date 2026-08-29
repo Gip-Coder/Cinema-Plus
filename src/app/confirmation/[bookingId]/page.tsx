@@ -14,7 +14,7 @@ import {
   XCircle
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { apiClient } from "@/lib/api/client";
+import { apiClient, resolveMediaUrl } from "@/lib/api/client";
 import BookingStepper from "@/components/booking/stepper";
 import type { Booking } from "@/types/domain";
 
@@ -140,7 +140,7 @@ export default function ConfirmationPage() {
           <div className="p-6 flex flex-col sm:flex-row gap-6 border-b border-dashed border-white/[0.08]">
             {movie?.poster_url && (
               /* eslint-disable-next-line @next/next/no-img-element */
-              <img src={movie.poster_url} alt={movie.title} className="w-24 h-36 object-cover rounded-xl border border-white/[0.08] shrink-0" />
+              <img src={resolveMediaUrl(movie.poster_url)} alt={movie.title} className="w-24 h-36 object-cover rounded-xl border border-white/[0.08] shrink-0" />
             )}
             
             <div className="space-y-4 flex-1">

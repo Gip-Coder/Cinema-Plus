@@ -22,6 +22,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { bookingsApi } from "@/lib/api/bookings";
 import { moviesApi } from "@/lib/api/movies";
+import { resolveMediaUrl } from "@/lib/api/client";
 import type { Booking, Movie } from "@/types/domain";
 
 interface NotificationItem {
@@ -354,7 +355,7 @@ export default function DashboardPage() {
                     <div className="aspect-[2/3] w-20 rounded-xl bg-zinc-900 border border-white/[0.06] overflow-hidden shrink-0">
                       {booking.movie?.poster_url ? (
                         /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={booking.movie.poster_url} alt={booking.movie.title} className="w-full h-full object-cover" />
+                        <img src={resolveMediaUrl(booking.movie.poster_url)} alt={booking.movie.title} className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-zinc-700">
                           <Film className="h-6 w-6" />
@@ -423,7 +424,7 @@ export default function DashboardPage() {
                     <div className="aspect-[2/3] w-full rounded-xl bg-zinc-950 border border-white/[0.06] overflow-hidden relative group-hover:border-red-500/20 transition-all duration-300">
                       {movie.poster_url ? (
                         /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={movie.poster_url} alt={movie.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                        <img src={resolveMediaUrl(movie.poster_url)} alt={movie.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-zinc-700">
                           <Film className="h-8 w-8" />
@@ -459,7 +460,7 @@ export default function DashboardPage() {
                       <div className="h-10 w-7 rounded bg-zinc-950 overflow-hidden shrink-0 border border-white/[0.04]">
                         {movie.poster_url && (
                           /* eslint-disable-next-line @next/next/no-img-element */
-                          <img src={movie.poster_url} alt={movie.title} className="w-full h-full object-cover" />
+                          <img src={resolveMediaUrl(movie.poster_url)} alt={movie.title} className="w-full h-full object-cover" />
                         )}
                       </div>
                       <div className="flex-grow min-w-0">
@@ -489,7 +490,7 @@ export default function DashboardPage() {
                       <div className="h-10 w-7 rounded bg-zinc-950 overflow-hidden shrink-0 border border-white/[0.04]">
                         {movie.poster_url && (
                           /* eslint-disable-next-line @next/next/no-img-element */
-                          <img src={movie.poster_url} alt={movie.title} className="w-full h-full object-cover" />
+                          <img src={resolveMediaUrl(movie.poster_url)} alt={movie.title} className="w-full h-full object-cover" />
                         )}
                       </div>
                       <div className="flex-grow min-w-0">

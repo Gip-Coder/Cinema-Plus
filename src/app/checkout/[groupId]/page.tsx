@@ -19,7 +19,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { scheduleApi } from "@/lib/api/schedule";
 import * as adminApi from "@/lib/api/admin";
 import { reservationsApi } from "@/lib/api/reservations";
-import { apiClient } from "@/lib/api/client";
+import { apiClient, resolveMediaUrl } from "@/lib/api/client";
 import BookingStepper from "@/components/booking/stepper";
 import type { Show, ReservationGroup, TheatreLayout, PriceCalculation } from "@/types/domain";
 
@@ -449,7 +449,7 @@ export default function CheckoutPage() {
             <div className="bg-red-600/10 border-b border-white/[0.04] p-5 flex gap-4">
               {show?.movie?.poster_url && (
                 /* eslint-disable-next-line @next/next/no-img-element */
-                <img src={show.movie.poster_url} alt={show.movie.title} className="w-12 h-16 object-cover rounded-lg border border-white/[0.08]" />
+                <img src={resolveMediaUrl(show.movie.poster_url)} alt={show.movie.title} className="w-12 h-16 object-cover rounded-lg border border-white/[0.08]" />
               )}
               <div className="space-y-1 text-left">
                 <span className="text-[9px] uppercase tracking-wider font-extrabold text-red-400">Spotlight Movie</span>

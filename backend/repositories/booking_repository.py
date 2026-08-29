@@ -87,6 +87,10 @@ class BookingRepository:
         """Commit the entire booking + seats as a single atomic transaction."""
         self.db.commit()
 
+    def rollback(self) -> None:
+        """Roll back a failed transaction (e.g. after an IntegrityError)."""
+        self.db.rollback()
+
     def refresh(self, obj: Any) -> None:
         self.db.refresh(obj)
 

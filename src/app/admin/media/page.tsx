@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import * as adminApi from "@/lib/api/admin";
+import { resolveMediaUrl } from "@/lib/api/client";
 import type { MediaAsset } from "@/types/admin";
 
 function formatBytes(bytes: number): string {
@@ -201,7 +202,7 @@ export default function AdminMediaPage() {
               <div className="aspect-[4/3] bg-zinc-900 flex items-center justify-center">
                 {asset.public_url || asset.thumbnail_url ? (
                   <NextImage
-                    src={asset.thumbnail_url ?? asset.public_url ?? ""}
+                    src={resolveMediaUrl(asset.thumbnail_url ?? asset.public_url ?? "")}
                     alt={asset.filename}
                     width={400}
                     height={300}
@@ -360,7 +361,7 @@ export default function AdminMediaPage() {
               <div className="aspect-[16/9] bg-zinc-900 rounded-lg overflow-hidden flex items-center justify-center relative border border-white/[0.04]">
                 {selectedMetadata.public_url || selectedMetadata.thumbnail_url ? (
                   <NextImage
-                    src={selectedMetadata.thumbnail_url ?? selectedMetadata.public_url ?? ""}
+                    src={resolveMediaUrl(selectedMetadata.thumbnail_url ?? selectedMetadata.public_url ?? "")}
                     alt={selectedMetadata.filename}
                     fill
                     className="object-contain"

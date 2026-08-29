@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { bookingsApi } from "@/lib/api/bookings";
+import { resolveMediaUrl } from "@/lib/api/client";
 import type { Booking } from "@/types/domain";
 
 export default function BookingDetailPage() {
@@ -154,7 +155,7 @@ export default function BookingDetailPage() {
             <div className="aspect-[2/3] w-20 rounded-xl bg-zinc-900 border border-white/[0.06] overflow-hidden shrink-0">
               {booking.movie?.poster_url ? (
                 /* eslint-disable-next-line @next/next/no-img-element */
-                <img src={booking.movie.poster_url} alt={booking.movie.title} className="w-full h-full object-cover" />
+                <img src={resolveMediaUrl(booking.movie.poster_url)} alt={booking.movie.title} className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-zinc-700">
                   <Film className="h-6 w-6" />

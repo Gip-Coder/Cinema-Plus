@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, UniqueConstraint
 from sqlalchemy.orm import relationship
 from backend.database import Base
 from datetime import datetime
@@ -30,3 +30,13 @@ class BookedSeat(Base):
     category = Column(String(50)) # Premium, Executive, Normal
 
     booking = relationship("Booking", back_populates="booked_seats")
+
+    __table_args__ = (
+        # Mirrors the production schema (see Alembic migration 079cd5453dce).
+        # Declaring it here too means `Base.metadata.create_all()` — used by
+        # the pytest suite and scripts/seed_db.py — creates the same
+        # constraint on SQLite, instead of only MySQL via the migration.
+        # Without this, tests couldn't actually exercise the DB-level
+        # double-booking guard at all.
+        UniqueConstraint('show_id', 'seat_name', name='uq_booked_seats_show_seat'),
+    )

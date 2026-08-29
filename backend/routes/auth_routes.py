@@ -13,6 +13,7 @@ from backend.schemas.auth import (
 from backend.auth.security import get_current_user
 from backend.services.auth_service import AuthService
 from backend.utils.response import standard_response
+from backend.utils.rate_limiter import enforce_login_rate_limit, enforce_register_rate_limit
 
 router = APIRouter()
 
@@ -58,7 +59,7 @@ async def change_password(
     return standard_response(message="Password updated successfully")
 
 
-@router.post("/register", status_code=status.HTTP_201_CREATED)
+@router.post("/register", status_code=status.HTTP_201_CREATED, dependencies=[Depends(enforce_register_rate_limit)])
 async def register(
     user: UserCreate,
     auth_service: AuthService = Depends(get_auth_service),
@@ -68,7 +69,7 @@ async def register(
     return standard_response(data=user_data, message="Registration successful")
 
 
-@router.post("/login")
+@router.post("/login", dependencies=[Depends(enforce_login_rate_limit)])
 async def login(
     login_data: LoginRequest,
     auth_service: AuthService = Depends(get_auth_service),

@@ -28,3 +28,7 @@ class UnauthorizedException(CinemaPlusException):
 class ConflictException(CinemaPlusException):
     def __init__(self, detail: str = "Resource conflict"):
         super().__init__(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+class RateLimitExceededException(CinemaPlusException):
+    def __init__(self, detail: str = "Too many requests. Please try again later."):
+        super().__init__(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=detail)

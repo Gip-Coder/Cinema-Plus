@@ -23,6 +23,7 @@ import {
 import { moviesApi } from "@/lib/api/movies";
 import { scheduleApi } from "@/lib/api/schedule";
 import { reviewsApi } from "@/lib/api/reviews";
+import { resolveMediaUrl } from "@/lib/api/client";
 import { useAuth } from "@/hooks/use-auth";
 import type { Movie, Show, Theatre, Review } from "@/types/domain";
 
@@ -335,7 +336,7 @@ export default function MovieDetailsPage() {
       <section className="relative h-[320px] w-full overflow-hidden">
         <div 
           className="absolute inset-0 bg-cover bg-center bg-no-repeat filter blur-sm scale-105 opacity-20"
-          style={{ backgroundImage: `url(${movie.poster_url || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?q=80&w=2070"})` }}
+          style={{ backgroundImage: `url(${movie.poster_url ? resolveMediaUrl(movie.poster_url) : "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?q=80&w=2070"})` }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[hsl(222,84%,2.5%)] to-transparent" />
         
@@ -358,7 +359,7 @@ export default function MovieDetailsPage() {
           <div className="aspect-[2/3] w-full rounded-2xl border border-white/[0.08] bg-zinc-950 overflow-hidden shadow-2xl">
             {movie.poster_url ? (
               /* eslint-disable-next-line @next/next/no-img-element */
-              <img src={movie.poster_url} alt={movie.title} className="w-full h-full object-cover" />
+              <img src={resolveMediaUrl(movie.poster_url)} alt={movie.title} className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center text-zinc-700 bg-white/[0.01]">
                 <Film className="h-12 w-12 mb-2 stroke-[1.5]" />

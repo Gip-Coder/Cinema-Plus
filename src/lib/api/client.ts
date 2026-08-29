@@ -28,6 +28,25 @@ function getApiBaseUrl() {
   return (process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, "");
 }
 
+/**
+ * Resolves a possibly-relative media URL (e.g. a poster path returned by the
+ * backend as "/uploads/media/original/xyz.jpg") against the backend's own
+ * origin. Without this, a relative path resolves against the frontend's own
+ * origin instead — which 404s as soon as frontend and backend are deployed
+ * on separate domains (the standard Railway two-service setup). Absolute
+ * URLs (http(s)://..., protocol-relative //..., or data:) are returned
+ * unchanged.
+ */
+export function resolveMediaUrl(url: string | null | undefined): string {
+  if (!url) {
+    return "";
+  }
+  if (/^([a-z][a-z0-9+.-]*:)?\/\//i.test(url) || url.startsWith("data:")) {
+    return url;
+  }
+  return `${getApiBaseUrl()}${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
 function appendQuery(url: URL, query?: QueryParams) {
   if (!query) {
     return;

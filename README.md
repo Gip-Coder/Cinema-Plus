@@ -292,25 +292,72 @@ docker compose down
 
 ## Production Deployment
 
-### Option A: Render / Railway (Docker Deployment)
+### Option A: Railway (two services, one repo)
 
-1. **Database**: Provision a managed MySQL database instance (e.g. PlanetScale, AWS RDS, or Render MySQL).
-2. **Backend**:
-   - Create a Web Service from the repo using Docker runtime (`Dockerfile`).
-   - Set environment variables:
+This repo deploys as **two separate Railway services** built from the same
+GitHub repository — a `backend` service (using `Dockerfile`) and a
+`frontend` service (using `Dockerfile.frontend`). Railway auto-detects a
+file literally named `Dockerfile`, but `Dockerfile.frontend` needs to be
+selected explicitly per-service (Railway has no single config file that can
+unambiguously target one of two services sharing a repo root, so this is
+done via service variables/settings in the dashboard rather than a committed
+`railway.json`).
+
+1. **Database**: Provision a Railway MySQL plugin (or any managed MySQL).
+   Note its connection host/port/user/password/database name — Railway's
+   MySQL plugin exposes these as `MYSQLHOST`, `MYSQLPORT`, `MYSQLUSER`,
+   `MYSQLPASSWORD`, `MYSQLDATABASE`; map them to this app's `DB_HOST`,
+   `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` variables below.
+
+2. **Backend service**:
+   - Create a new Railway service from this repo. Leave the Dockerfile path
+     as the default — Railway will find the root `Dockerfile` automatically.
+   - Set these **runtime environment variables** (Settings → Variables):
      - `APP_ENV=production`
      - `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
      - `SECRET_KEY` (generate with `python -c "import secrets; print(secrets.token_hex(32))"`)
-     - `ADMIN_PASSWORD` (strong password)
-     - `ALLOWED_ORIGINS=https://your-frontend-domain.com`
-     - `FRONTEND_URL=https://your-frontend-domain.com`
-   - **Persistent Disk**: Attach a persistent disk mounted at `/app/uploads` to preserve uploaded posters and media.
-3. **Frontend**:
-   - Create a Web Service using `Dockerfile.frontend` (or deploy to Vercel).
-   - Set build argument / environment variable:
-     - `NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.com`
-4. **Post-Deployment Migration**:
-   - Run `alembic upgrade head` in the backend container console.
+     - `ADMIN_PASSWORD` (a strong password — the app refuses to boot in
+       production without this set)
+     - `ADMIN_EMAIL`
+     - `ALLOWED_ORIGINS=https://<your-frontend-service>.up.railway.app`
+     - `FRONTEND_URL=https://<your-frontend-service>.up.railway.app`
+   - Do **not** set `PORT` yourself — Railway injects it automatically, and
+     the Dockerfile CMD already reads `${PORT:-8001}`.
+   - Set the **health check path** to `/health` (Settings → Healthcheck
+     Path). `/health` requires no authentication and checks both the
+     database connection and upload-directory writability.
+   - **Attach a persistent Volume** (Settings → Volumes → New Volume),
+     mounted at `/app/uploads`. Without this, any admin-uploaded poster is
+     lost on the next redeploy/restart, since the container filesystem is
+     otherwise ephemeral. This is the only storage mechanism this app uses —
+     it does not integrate with S3 or any other object storage.
+   - Migrations run automatically: the Dockerfile's start command is
+     `alembic upgrade head && uvicorn ...`, so every deploy applies pending
+     migrations before the server starts accepting traffic. No separate
+     manual migration step is required.
+
+3. **Frontend service**:
+   - Create a second Railway service from the same repo.
+   - Set the service variable `RAILWAY_DOCKERFILE_PATH=Dockerfile.frontend`
+     so Railway builds from the frontend Dockerfile instead of the default
+     `Dockerfile`.
+   - Set `NEXT_PUBLIC_API_BASE_URL=https://<your-backend-service>.up.railway.app`.
+     **This must be a build-time variable, not just a runtime one** — Next.js
+     inlines `NEXT_PUBLIC_*` variables into the client bundle at `next build`
+     time (see `Dockerfile.frontend`'s `ARG NEXT_PUBLIC_API_BASE_URL`).
+     Railway makes service variables available as Docker build args
+     automatically, but if you ever change this value, you must **trigger a
+     new deploy/redeploy** — restarting the existing container does nothing,
+     since the value is already baked into the built static files. A stale
+     value silently ships as `http://localhost:8001` if it was never set at
+     build time, which fails every API call from the deployed frontend.
+   - Do not set `PORT` yourself — the frontend Dockerfile CMD reads
+     `${PORT:-3005}` and Railway injects `PORT` automatically.
+
+4. **Verify**: after both services are up, confirm `GET https://<backend>/health`
+   returns `{"status": "healthy", ...}`, then open the frontend URL and
+   confirm movies load (see the Production Smoke Test in the final audit
+   report for the full checklist).
 
 ### Option B: VPS (Ubuntu / Debian with Docker Compose)
 
