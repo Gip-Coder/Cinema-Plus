@@ -1,14 +1,101 @@
+import os
+import tempfile
 import threading
 from unittest.mock import patch
 from datetime import date, datetime, timedelta, timezone
 
+import pytest
 from fastapi import status
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-from backend.database import SessionLocal as TestingSessionLocal
+from backend.database import Base, get_db
+from backend.main import app
+from backend.models import models
+from backend.auth.security import get_password_hash
 from backend.services.reservation_service import ReservationService
 from backend.services.seat_state_service import SeatStateService
 from backend.exceptions.reservation_exceptions import SeatsAlreadyReservedException
 from backend.models.reservation import ReservationGroup, SeatReservation
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# This module deliberately drives two genuinely concurrent writers against
+# the same seat-reservation row from separate threads (the whole point of
+# test_concurrent_reservation_exactly_one_succeeds below). That requires two
+# REAL, independent physical SQLite connections that both see the same
+# schema/data.
+#
+# Neither of the suite's shared-engine options can provide that reliably:
+#   - The main suite engine (backend/database.py, StaticPool + in-memory)
+#     hands every SessionLocal() call the SAME physical connection object,
+#     which produced intermittent `sqlite3.DatabaseError: no more rows
+#     available` / `InvalidRequestError: Could not refresh instance` under
+#     real concurrent thread access.
+#   - A SQLite shared-cache in-memory URI (`cache=shared`) was tried next —
+#     it gives independent connections, but concurrent writers to the same
+#     table under shared-cache mode hit `sqlite3.OperationalError: database
+#     table is locked` (SQLITE_LOCKED). Unlike ordinary file-level SQLite
+#     locking (SQLITE_BUSY), SQLITE_LOCKED from shared-cache table locks is
+#     NOT retried by `busy_timeout` — confirmed by repeated local failures.
+#
+# A real temp-file-backed SQLite database — scoped only to this module, and
+# cleaned up afterward — uses ordinary file-level locking (SQLITE_BUSY,
+# which busy_timeout does retry), the same mechanism that ran this exact
+# test reliably for a long time before other tests' needs drove the main
+# suite engine to an in-memory database. This does NOT touch or restore the
+# global `./test.db` — it's a fresh, uniquely-named file under a
+# TemporaryDirectory that only this module ever sees.
+@pytest.fixture(scope="module")
+def concurrency_engine():
+    tmpdir = tempfile.TemporaryDirectory(prefix="cinemaplus_concurrency_test_")
+    try:
+        db_path = os.path.join(tmpdir.name, "concurrency.db")
+        engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+        Base.metadata.create_all(bind=engine)
+        yield engine
+        engine.dispose()
+    finally:
+        tmpdir.cleanup()
+
+
+@pytest.fixture(name="db")
+def db_fixture(concurrency_engine):
+    """Overrides the global `db` fixture for this module only, binding it to
+    concurrency_engine instead of the shared suite-wide in-memory engine."""
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=concurrency_engine)
+    session = SessionLocal()
+
+    if not session.query(models.User).filter(models.User.username == "admin").first():
+        admin = models.User(
+            username="admin",
+            email="admin@cinemaplus.test",
+            hashed_password=get_password_hash("admin123"),
+            role="admin",
+        )
+        session.add(admin)
+        session.commit()
+
+    yield session
+    session.close()
+
+
+@pytest.fixture(name="client")
+def client_fixture(db):
+    """Overrides the global `client` fixture for this module only, so
+    requests in these tests hit the same concurrency_engine-backed database
+    as the `db` fixture and the worker threads below."""
+    def override_get_db():
+        try:
+            yield db
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
 
 
 def _create_movie_theatre_screen_show(client, headers, title):
@@ -69,7 +156,7 @@ def _register_and_get_user_id(client, db, username):
     return res.json()["data"]["id"]
 
 
-def test_concurrent_reservation_exactly_one_succeeds(client, db):
+def test_concurrent_reservation_exactly_one_succeeds(client, db, concurrency_engine):
     admin_login = client.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
     headers = {"Authorization": f"Bearer {admin_login.json()['data']['access_token']}"}
 
@@ -78,6 +165,12 @@ def test_concurrent_reservation_exactly_one_succeeds(client, db):
 
     user1_id = _register_and_get_user_id(client, db, "race_user_one")
     user2_id = _register_and_get_user_id(client, db, "race_user_two")
+
+    # Each worker thread gets its own REAL connection to concurrency_engine
+    # (a real temp-file SQLite database), so this actually exercises two
+    # independent physical connections racing for the same seat — not one
+    # shared connection object standing in for two "logical" sessions.
+    WorkerSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=concurrency_engine)
 
     # Force both threads past the app-level availability check before either
     # commits its insert, so the outcome is decided purely by the DB-level
@@ -96,7 +189,7 @@ def test_concurrent_reservation_exactly_one_succeeds(client, db):
     outcomes_lock = threading.Lock()
 
     def worker(user_id):
-        session = TestingSessionLocal()
+        session = WorkerSessionLocal()
         service = ReservationService(session)
         try:
             group = service.create_reservation_group(show_id, [seat_name], user_id)

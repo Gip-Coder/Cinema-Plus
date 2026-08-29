@@ -20,22 +20,13 @@ from backend.main import app
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_database():
-    # Clean up any old test.db first
-    if os.path.exists("./test.db"):
-        try:
-            os.remove("./test.db")
-        except Exception:
-            pass
-    # Create all tables
+    # backend.database uses an in-memory SQLite DB (StaticPool) in TESTING
+    # mode — there is no ./test.db file on disk anymore, so no filesystem
+    # cleanup is needed before or after the session.
     Base.metadata.create_all(bind=engine)
     yield
     # Drop all tables after the test session is completed
     Base.metadata.drop_all(bind=engine)
-    if os.path.exists("./test.db"):
-        try:
-            os.remove("./test.db")
-        except Exception:
-            pass
 
 
 @pytest.fixture(name="db")

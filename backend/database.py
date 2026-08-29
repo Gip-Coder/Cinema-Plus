@@ -2,17 +2,39 @@ import os
 import sys
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.pool import StaticPool
 from backend.core.config import settings
 
 # ── Testing mode ───────────────────────────────────────────────────────────────
 TESTING_MODE = os.getenv("TESTING") == "True"
 
 if TESTING_MODE:
-    SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
-    print("Testing mode: Connecting to local SQLite database: ./test.db")
+    # In-memory SQLite, not a file on disk. GitHub Actions' ubuntu-latest
+    # runners have consistently failed on the file-based `sqlite:///./test.db`
+    # with `sqlite3.OperationalError: disk I/O error` during the very first
+    # CREATE TABLE — a low-level filesystem I/O failure, not an application
+    # bug (confirmed: every run of this CI workflow has failed the same way
+    # since its first run, across unrelated commits). Moving the test
+    # database off the filesystem entirely avoids that class of failure.
+    #
+    # StaticPool hands every SessionLocal() call the SAME physical sqlite3
+    # connection object, which is fine for ordinary sequential test code.
+    # backend/tests/test_reservation_concurrency.py deliberately opens two
+    # sessions in two separate threads to test a genuine concurrent-booking
+    # race, which needs two REAL independent connections — that test uses
+    # its own dedicated, narrowly-scoped temp-file SQLite engine instead
+    # (see that file), rather than sharing this in-memory engine. (A SQLite
+    # shared-cache in-memory URI was also tried for that test as an
+    # alternative to a temp file — it produces `database table is locked`
+    # errors that, unlike ordinary file-level SQLite locks, are NOT retried
+    # by busy_timeout, making it unreliable for genuinely concurrent
+    # writers. Reverted in favor of the temp-file approach.)
+    SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
+    print("Testing mode: Connecting to in-memory SQLite database.")
     engine = create_engine(
         SQLALCHEMY_DATABASE_URL,
         connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
 else:
     SQLALCHEMY_DATABASE_URL = (
